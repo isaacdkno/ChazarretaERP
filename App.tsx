@@ -19,12 +19,11 @@ import {
   Github,
   AlertCircle,
   RefreshCw,
-  // Added missing Database icon import
   Database
 } from 'lucide-react';
 
 import { UserRole, Order, Customer, OrderStatus, GateEntry, AuditLog, Product } from './types';
-import { supabase } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 import DistributorView from './components/DistributorView';
 import GateView from './components/GateView';
@@ -46,6 +45,14 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
+    // Si no está configurado, no intentamos descargar nada
+    if (!isSupabaseConfigured()) {
+      setDbReady(false);
+      setIsSynced(false);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       // 1. Verificar si la tabla existe (Test de conexión)
@@ -108,7 +115,7 @@ const App: React.FC = () => {
           customerId: o.customer_id,
           customerName: o.customer_name || 'Desconocido',
           status: o.status as OrderStatus,
-          totalAmount: o.total_amount,
+          total_amount: o.total_amount,
           createdAt: o.created_at,
           signatureUrl: o.signature_url,
           items: (o.order_items || []).map((i: any) => ({
@@ -136,6 +143,7 @@ const App: React.FC = () => {
   }, []);
 
   const addOrder = async (order: Order) => {
+    if (!isSupabaseConfigured()) return;
     setIsSynced(false);
     try {
       const { data: newOrder, error: orderError } = await supabase
@@ -156,7 +164,6 @@ const App: React.FC = () => {
         product_id: item.productId,
         quantity: item.quantity,
         bonus_quantity: item.bonusQuantity,
-        // Fixed: item.unit_price should be item.unitPrice as per OrderItem interface
         unit_price: item.unitPrice
       }));
 
@@ -170,6 +177,7 @@ const App: React.FC = () => {
   };
 
   const updateOrder = async (updatedOrder: Order) => {
+    if (!isSupabaseConfigured()) return;
     setIsSynced(false);
     try {
       await supabase.from('orders').update({
@@ -188,7 +196,7 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-10">
         <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-        <p className="font-black uppercase tracking-[0.3em] text-sm animate-pulse">Sincronizando con Supabase...</p>
+        <p className="font-black uppercase tracking-[0.3em] text-sm animate-pulse">Iniciando sistema...</p>
       </div>
     );
   }
@@ -299,8 +307,8 @@ const App: React.FC = () => {
                     <AlertCircle size={24} />
                   </div>
                   <div>
-                    <h3 className="font-black uppercase text-sm tracking-tight">Base de datos no inicializada</h3>
-                    <p className="text-xs font-medium">Es necesario configurar el esquema SQL en Supabase antes de operar.</p>
+                    <h3 className="font-black uppercase text-sm tracking-tight">Configuración Cloud Requerida</h3>
+                    <p className="text-xs font-medium">Es necesario vincular Supabase para sincronizar datos reales.</p>
                   </div>
                 </div>
                 <div className="flex gap-3">
@@ -357,7 +365,7 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatsCard title="Saldo Global" value={`$${customers.reduce((acc, c) => acc + c.balance, 0).toLocaleString()}`} subtitle="Cuentas Corrientes" icon={<BadgeDollarSign size={24}/>} color="blue" />
         <StatsCard title="Órdenes Activas" value={orders.length.toString()} subtitle="Cola de producción" icon={<ClipboardList size={24}/>} color="purple" />
-        <StatsCard title="Estado Cloud" value={dbReady === true ? "ACTIVO" : (dbReady === false ? "SIN ESQUEMA" : "SIN CONEXIÓN")} subtitle="Sync Supabase" icon={<CheckCircle2 size={24}/>} color={dbReady === true ? "emerald" : "red"} />
+        <StatsCard title="Estado Cloud" value={dbReady === true ? "ACTIVO" : (dbReady === false ? "DESCONECTADO" : "ERROR")} subtitle="Sync Supabase" icon={<CheckCircle2 size={24}/>} color={dbReady === true ? "emerald" : (dbReady === false ? "amber" : "red")} />
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
@@ -397,7 +405,7 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
 };
 
 const StatsCard: React.FC<{title: string, value: string, subtitle: string, icon: React.ReactNode, color: string}> = ({ title, value, subtitle, icon, color }) => {
-  const colors: {[key: string]: string} = { blue: 'text-blue-600 bg-blue-50', purple: 'text-purple-600 bg-purple-50', emerald: 'text-emerald-600 bg-emerald-50', red: 'text-red-600 bg-red-50' };
+  const colors: {[key: string]: string} = { blue: 'text-blue-600 bg-blue-50', purple: 'text-purple-600 bg-purple-50', emerald: 'text-emerald-600 bg-emerald-50', red: 'text-red-600 bg-red-50', amber: 'text-amber-600 bg-amber-50' };
   return (
     <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm transition-all hover:scale-[1.02]">
       <div className={`w-14 h-14 ${colors[color]} rounded-2xl flex items-center justify-center mb-6`}>{icon}</div>
