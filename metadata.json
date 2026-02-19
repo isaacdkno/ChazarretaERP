@@ -1,0 +1,7 @@
+{
+  "name": "Copy of ERP Chazarreta v1.0",
+  "description": "Custom ERP system for Fábrica Chazarreta (La Fornarina & Villecco brands) featuring multi-brand price lists, automated bonuses, logistics control with digital signatures, and dual-mode collection accounting.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
