@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
   Truck, 
   Store, 
@@ -15,11 +15,10 @@ import {
   Plus,
   CheckCircle2,
   BarChart3,
-  Lock,
-  Signature,
-  CloudLightning,
   Wifi,
-  Github
+  Github,
+  LayoutDashboard,
+  Box
 } from 'lucide-react';
 
 import { UserRole, Order, Customer, OrderStatus, GateEntry, AuditLog } from './types';
@@ -44,7 +43,7 @@ const App: React.FC = () => {
   const addOrder = (order: Order) => {
     setOrders(prev => [order, ...prev]);
     setIsSynced(false);
-    setTimeout(() => setIsSynced(true), 1500); // Simulando push a GitHub/Supabase
+    setTimeout(() => setIsSynced(true), 1500);
   };
 
   const updateOrder = (updatedOrder: Order) => {
@@ -53,6 +52,7 @@ const App: React.FC = () => {
     setTimeout(() => setIsSynced(true), 1500);
   };
 
+  // Pantalla de Login / Selección de Rol
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-6 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/20 via-slate-900 to-slate-900">
@@ -62,7 +62,7 @@ const App: React.FC = () => {
               <Warehouse size={40} />
             </div>
             <h1 className="text-4xl font-black text-slate-800 tracking-tight mb-2">CHAZARRETA <span className="text-blue-600">ERP</span></h1>
-            <p className="text-slate-500 font-medium">Gestión de Fábrica & Logística v1.0</p>
+            <p className="text-slate-500 font-medium">Seleccione su puesto de trabajo</p>
           </div>
           
           <div className="grid grid-cols-1 gap-3 max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
@@ -77,7 +77,10 @@ const App: React.FC = () => {
             ].map(item => (
               <button
                 key={item.role}
-                onClick={() => setCurrentUser({ name: 'Operador Chazarreta', role: item.role })}
+                onClick={() => {
+                  setCurrentUser({ name: 'Operador Chazarreta', role: item.role });
+                  window.location.hash = '#/'; // Forzar reinicio a la raíz al loguear
+                }}
                 className="flex items-center p-5 border border-slate-100 rounded-3xl hover:bg-white hover:shadow-xl hover:border-blue-200 transition-all group text-left"
               >
                 <div className={`w-12 h-12 ${item.color} rounded-2xl flex items-center justify-center mr-4 group-hover:scale-110 transition-transform`}>
@@ -85,7 +88,7 @@ const App: React.FC = () => {
                   {item.role === UserRole.GATE && <Truck size={22}/>}
                   {item.role === UserRole.ORDER_CENTER && <ClipboardList size={22}/>}
                   {item.role === UserRole.FACTORY && <Warehouse size={22}/>}
-                  {item.role === UserRole.DISPATCH && <CloudLightning size={22}/>}
+                  {item.role === UserRole.DISPATCH && <Truck size={22}/>}
                   {item.role === UserRole.COLLECTION && <BadgeDollarSign size={22}/>}
                   {item.role === UserRole.ADMIN && <Settings size={22}/>}
                 </div>
@@ -118,20 +121,36 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex-1 px-4 space-y-1">
-            <p className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Navegación</p>
-            <SidebarLink to="/" icon={<BarChart3 size={20} />} label="Dashboard" />
-            <SidebarLink to="/orders" icon={<ClipboardList size={20} />} label="Comandas" />
+            <p className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">General</p>
+            <SidebarLink to="/" icon={<LayoutDashboard size={20} />} label="Inicio" />
+            <SidebarLink to="/orders" icon={<ClipboardList size={20} />} label="Registro Comandas" />
             
-            <p className="px-4 py-2 mt-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Operación</p>
-            {currentUser.role === UserRole.DISTRIBUTOR && <SidebarLink to="/new-order" icon={<Plus size={20} />} label="Cargar Pedido" />}
-            {currentUser.role === UserRole.ORDER_CENTER && <SidebarLink to="/center" icon={<Settings size={20} />} label="Centro de Control" />}
-            {currentUser.role === UserRole.COLLECTION && <SidebarLink to="/collection" icon={<BadgeDollarSign size={20} />} label="Tesorería" />}
-            {currentUser.role === UserRole.DISPATCH && <SidebarLink to="/dispatch" icon={<Truck size={20} />} label="Hoja de Ruta" />}
+            <p className="px-4 py-2 mt-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Tu Módulo</p>
+            
+            {/* Links condicionales por rol para que nunca queden "atrapados" */}
+            {currentUser.role === UserRole.DISTRIBUTOR && (
+              <SidebarLink to="/new-order" icon={<Plus size={20} />} label="Cargar Pedido" />
+            )}
+            {currentUser.role === UserRole.GATE && (
+              <SidebarLink to="/gate" icon={<Truck size={20} />} label="Control Portería" />
+            )}
+            {currentUser.role === UserRole.ORDER_CENTER && (
+              <SidebarLink to="/center" icon={<Settings size={20} />} label="Gestión de Pedidos" />
+            )}
+            {currentUser.role === UserRole.FACTORY && (
+              <SidebarLink to="/factory" icon={<Box size={20} />} label="Plan de Producción" />
+            )}
+            {currentUser.role === UserRole.DISPATCH && (
+              <SidebarLink to="/dispatch" icon={<Truck size={20} />} label="Hoja de Ruta" />
+            )}
+            {currentUser.role === UserRole.COLLECTION && (
+              <SidebarLink to="/collection" icon={<BadgeDollarSign size={20} />} label="Caja y Cobranza" />
+            )}
             
             {(currentUser.role === UserRole.ADMIN) && (
               <>
                 <p className="px-4 py-2 mt-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Sistemas</p>
-                <SidebarLink to="/audit" icon={<Github size={20} />} label="Sincronización DB" />
+                <SidebarLink to="/audit" icon={<Github size={20} />} label="Sincronización Cloud" />
               </>
             )}
           </div>
@@ -145,7 +164,7 @@ const App: React.FC = () => {
                 <p className="text-sm font-bold text-white truncate">{currentUser.name}</p>
                 <div className="flex items-center gap-1.5">
                    <div className={`w-1.5 h-1.5 rounded-full ${isSynced ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></div>
-                   <p className="text-[10px] font-bold text-slate-500 uppercase">{isSynced ? 'Sincronizado' : 'Pendiente'}</p>
+                   <p className="text-[10px] font-bold text-slate-500 uppercase">{isSynced ? 'Online' : 'Sync...'}</p>
                 </div>
               </div>
             </div>
@@ -166,7 +185,6 @@ const App: React.FC = () => {
               <Route path="/" element={<HomeDashboard role={currentUser.role} orders={orders} customers={customers} isSynced={isSynced} />} />
               <Route path="/orders" element={<OrdersTable orders={orders} />} />
               
-              {/* Rutas por Rol */}
               <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={MOCK_PRODUCTS} />} />
               <Route path="/gate" element={<GateView gateEntries={gateEntries} setGateEntries={setGateEntries} />} />
               <Route path="/center" element={<OrderCenterView orders={orders} updateOrder={updateOrder} addOrder={addOrder} />} />
@@ -184,21 +202,28 @@ const App: React.FC = () => {
   );
 };
 
-const SidebarLink: React.FC<{to: string, icon: React.ReactNode, label: string}> = ({ to, icon, label }) => (
-  <Link 
-    to={to} 
-    className="flex items-center space-x-3 px-4 py-3 rounded-2xl text-slate-400 hover:text-white hover:bg-white/5 transition-all group"
-  >
-    <span className="text-slate-500 group-hover:text-blue-500 transition-colors">{icon}</span>
-    <span className="text-sm font-bold tracking-tight">{label}</span>
-  </Link>
-);
+const SidebarLink: React.FC<{to: string, icon: React.ReactNode, label: string}> = ({ to, icon, label }) => {
+  const location = useLocation();
+  const isActive = location.pathname === to;
+
+  return (
+    <Link 
+      to={to} 
+      className={`flex items-center space-x-3 px-4 py-3 rounded-2xl transition-all group ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+    >
+      <span className={`${isActive ? 'text-white' : 'text-slate-500 group-hover:text-blue-500'} transition-colors`}>{icon}</span>
+      <span className="text-sm font-bold tracking-tight">{label}</span>
+    </Link>
+  );
+};
 
 const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Customer[], isSynced: boolean}> = ({ role, orders, customers, isSynced }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   
+  // Redirección inteligente al entrar: te lleva a tu módulo principal solo si estás en la raíz
   useEffect(() => {
-    if (role !== UserRole.DISTRIBUTOR && window.location.hash === '#/') {
+    if (location.pathname === '/') {
       const paths = {
         [UserRole.GATE]: '/gate',
         [UserRole.ORDER_CENTER]: '/center',
@@ -206,10 +231,15 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
         [UserRole.DISPATCH]: '/dispatch',
         [UserRole.COLLECTION]: '/collection',
         [UserRole.ADMIN]: '/audit',
+        [UserRole.DISTRIBUTOR]: '/', // El distribuidor se queda en el dashboard
       };
-      if (paths[role]) navigate(paths[role]);
+      
+      const target = paths[role];
+      if (target && target !== '/') {
+        navigate(target, { replace: true });
+      }
     }
-  }, [role, navigate]);
+  }, [role, navigate, location]);
 
   const customer = customers[0];
   const myOrders = orders.filter(o => o.customerId === customer.id);
@@ -218,32 +248,26 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
     <div className="space-y-8 animate-in fade-in duration-500">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight">Panel Principal</h1>
-          <p className="text-slate-500 font-medium">Bienvenido al sistema de gestión unificada.</p>
+          <h1 className="text-4xl font-black text-slate-900 tracking-tight">Panel de Control</h1>
+          <p className="text-slate-500 font-medium">Bienvenido, estás operando en el modo <span className="text-blue-600 font-bold uppercase">{role}</span></p>
         </div>
         <div className="flex gap-3">
            <div className="bg-white px-6 py-3 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3">
               <div className={`w-3 h-3 rounded-full ${isSynced ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-amber-500'}`}></div>
-              <span className="text-xs font-black text-slate-600 uppercase tracking-widest">{isSynced ? 'Nube Sincronizada' : 'Sincronizando...'}</span>
+              <span className="text-xs font-black text-slate-600 uppercase tracking-widest">{isSynced ? 'Sincronizado' : 'Pendiente Sync'}</span>
            </div>
-           {role === UserRole.DISTRIBUTOR && (
-             <Link to="/new-order" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl font-bold shadow-xl shadow-blue-200 transition-all flex items-center gap-2">
-                <Plus size={20} /> Nuevo Pedido
-             </Link>
-           )}
         </div>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatsCard title="Saldo en Cuenta" value={`$${customer.balance.toLocaleString()}`} subtitle="Actualizado hace 2 min" icon={<BadgeDollarSign size={24}/>} color="blue" />
-        <StatsCard title="Pedidos del Mes" value={myOrders.length.toString()} subtitle="Total histórico: 124" icon={<ClipboardList size={24}/>} color="purple" />
-        <StatsCard title="Estado Fiscal" value={customer.isBlocked ? "Bloqueado" : "Activo"} subtitle="Sin deudas vencidas" icon={<CheckCircle2 size={24}/>} color={customer.isBlocked ? "red" : "emerald"} />
+        <StatsCard title="Saldo de Cuenta" value={`$${customer.balance.toLocaleString()}`} subtitle="Actualizado ahora" icon={<BadgeDollarSign size={24}/>} color="blue" />
+        <StatsCard title="Pedidos Activos" value={orders.length.toString()} subtitle="Total del día" icon={<ClipboardList size={24}/>} color="purple" />
+        <StatsCard title="Estado Sistema" value={isSynced ? "Operativo" : "Offline"} subtitle="Conexión Supabase" icon={<CheckCircle2 size={24}/>} color={isSynced ? "emerald" : "red"} />
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden">
         <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <h2 className="font-black text-slate-800 uppercase tracking-tight text-lg">Actividad Reciente</h2>
-          <button className="text-blue-600 text-xs font-black uppercase tracking-widest hover:underline">Ver Historial</button>
+          <h2 className="font-black text-slate-800 uppercase tracking-tight text-lg">Movimientos del Cliente</h2>
         </div>
         <div className="divide-y divide-slate-100">
           {myOrders.slice(0, 5).map(order => (
@@ -253,14 +277,13 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
                   <FileText size={22} />
                 </div>
                 <div>
-                  <p className="font-bold text-slate-800">Orden #ORD-{order.id.substr(0, 6).toUpperCase()}</p>
+                  <p className="font-bold text-slate-800">#ORD-{order.id.substr(0, 6).toUpperCase()}</p>
                   <p className="text-xs text-slate-400 font-bold">{new Date(order.createdAt).toLocaleDateString()}</p>
                 </div>
               </div>
               <div className="flex items-center space-x-8">
                 <div className="text-right">
                   <p className="font-black text-slate-900">${order.totalAmount.toLocaleString()}</p>
-                  <p className="text-[10px] text-slate-400 font-black uppercase">{order.items.length} productos</p>
                 </div>
                 <OrderStatusBadge status={order.status} />
               </div>
@@ -268,10 +291,7 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
           ))}
           {myOrders.length === 0 && (
             <div className="p-20 text-center">
-               <div className="bg-slate-50 w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto mb-6 opacity-40">
-                  <ClipboardList size={40} className="text-slate-400" />
-               </div>
-               <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">No se encontraron movimientos</p>
+               <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">No hay movimientos recientes</p>
             </div>
           )}
         </div>
@@ -282,22 +302,20 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
 
 const StatsCard: React.FC<{title: string, value: string, subtitle: string, icon: React.ReactNode, color: string}> = ({ title, value, subtitle, icon, color }) => {
   const colors: {[key: string]: string} = {
-    blue: 'from-blue-500 to-blue-600 text-blue-600 bg-blue-50',
-    purple: 'from-purple-500 to-purple-600 text-purple-600 bg-purple-50',
-    emerald: 'from-emerald-500 to-emerald-600 text-emerald-600 bg-emerald-50',
-    red: 'from-red-500 to-red-600 text-red-600 bg-red-50',
+    blue: 'text-blue-600 bg-blue-50',
+    purple: 'text-purple-600 bg-purple-50',
+    emerald: 'text-emerald-600 bg-emerald-50',
+    red: 'text-red-600 bg-red-50',
   };
 
   return (
-    <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all">
-      <div className={`w-14 h-14 ${colors[color].split(' ').slice(2).join(' ')} rounded-2xl flex items-center justify-center mb-6`}>
+    <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm transition-all">
+      <div className={`w-14 h-14 ${colors[color]} rounded-2xl flex items-center justify-center mb-6`}>
         {icon}
       </div>
       <p className="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">{title}</p>
       <h3 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">{value}</h3>
-      <p className="text-xs text-slate-400 font-medium flex items-center gap-1">
-         <Wifi size={12} className="text-emerald-500" /> {subtitle}
-      </p>
+      <p className="text-xs text-slate-400 font-medium">{subtitle}</p>
     </div>
   );
 };
@@ -311,56 +329,38 @@ const OrderStatusBadge: React.FC<{status: OrderStatus}> = ({ status }) => {
     [OrderStatus.PAID_FULL]: 'bg-emerald-100 text-emerald-700 border-emerald-200',
     [OrderStatus.CANCELLED]: 'bg-red-100 text-red-700 border-red-200',
   };
-  
-  const labels = {
-    [OrderStatus.PENDING]: 'PENDIENTE',
-    [OrderStatus.VALIDATED]: 'VALIDADO',
-    [OrderStatus.DISPATCHED]: 'DESPACHADO',
-    [OrderStatus.PAID_PARTIAL]: 'SALDO PARCIAL',
-    [OrderStatus.PAID_FULL]: 'PAGADO',
-    [OrderStatus.CANCELLED]: 'ANULADO',
-  };
-
   return (
     <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black border tracking-widest ${styles[status]}`}>
-      {labels[status]}
+      {status}
     </span>
   );
 };
 
 const OrdersTable: React.FC<{orders: Order[]}> = ({ orders }) => (
-  <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-    <h1 className="text-3xl font-black text-slate-900 tracking-tight">Registro de Comandas</h1>
+  <div className="space-y-6 animate-in slide-in-from-bottom-4">
+    <h1 className="text-3xl font-black text-slate-900 tracking-tight">Registro General de Comandas</h1>
     <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden overflow-x-auto">
       <table className="w-full text-left">
         <thead className="bg-slate-50 border-b border-slate-100">
           <tr>
-            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Referencia</th>
-            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Fecha</th>
+            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">ID</th>
             <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Cliente</th>
-            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Total Bruto</th>
+            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Total</th>
             <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Estado</th>
-            <th className="px-8 py-5 text-right text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Acciones</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-50">
           {orders.map(order => (
             <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
-              <td className="px-8 py-5 font-mono text-xs font-bold text-slate-400">#{order.id.substr(0, 8).toUpperCase()}</td>
-              <td className="px-8 py-5 text-sm font-bold text-slate-600">{new Date(order.createdAt).toLocaleDateString()}</td>
+              <td className="px-8 py-5 font-mono text-xs font-bold text-slate-400">#{order.id.substr(0, 8)}</td>
               <td className="px-8 py-5 font-black text-slate-800 uppercase tracking-tight">{order.customerName}</td>
               <td className="px-8 py-5 font-black text-slate-900">${order.totalAmount.toLocaleString()}</td>
               <td className="px-8 py-5"><OrderStatusBadge status={order.status} /></td>
-              <td className="px-8 py-5 text-right">
-                <button className="p-3 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><FileText size={20}/></button>
-              </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {orders.length === 0 && (
-        <div className="p-32 text-center text-slate-300 font-black uppercase tracking-widest text-sm">No hay registros</div>
-      )}
+      {orders.length === 0 && <div className="p-32 text-center text-slate-300 font-black uppercase tracking-widest">No hay datos</div>}
     </div>
   </div>
 );
