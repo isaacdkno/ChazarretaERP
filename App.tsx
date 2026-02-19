@@ -56,10 +56,13 @@ const App: React.FC = () => {
     setLoading(true);
     try {
       // 1. Verificar si la tabla existe (Test de conexión)
-      const { data: custs, error: custError } = await supabase.from('customers').select('*');
+      // Usamos limit(0) para que sea una consulta súper liviana solo para verificar existencia
+      const { data: custs, error: custError } = await supabase.from('customers').select('*').limit(100);
       
       if (custError) {
-        if (custError.code === '42P01') { // Tabla no existe
+        console.warn("DB Error:", custError);
+        // El código 42P01 significa que la tabla no existe en Postgres
+        if (custError.code === '42P01') { 
           setDbReady(false);
         } else {
           setDbReady('ERROR');
@@ -115,7 +118,6 @@ const App: React.FC = () => {
           customerId: o.customer_id,
           customerName: o.customer_name || 'Desconocido',
           status: o.status as OrderStatus,
-          // Fixed: Use camelCase to match Order interface in types.ts
           totalAmount: o.total_amount,
           createdAt: o.created_at,
           signatureUrl: o.signature_url,
@@ -123,7 +125,6 @@ const App: React.FC = () => {
             id: i.id,
             productId: i.product_id,
             quantity: i.quantity,
-            // Fixed: Use camelCase to match OrderItem interface in types.ts
             bonusQuantity: i.bonus_quantity,
             unitPrice: i.unit_price
           }))
@@ -198,7 +199,7 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-10">
         <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-        <p className="font-black uppercase tracking-[0.3em] text-sm animate-pulse">Iniciando sistema...</p>
+        <p className="font-black uppercase tracking-[0.3em] text-sm animate-pulse">Sincronizando con Supabase...</p>
       </div>
     );
   }
@@ -309,16 +310,16 @@ const App: React.FC = () => {
                     <AlertCircle size={24} />
                   </div>
                   <div>
-                    <h3 className="font-black uppercase text-sm tracking-tight">Configuración Cloud Requerida</h3>
-                    <p className="text-xs font-medium">Es necesario vincular Supabase para sincronizar datos reales.</p>
+                    <h3 className="font-black uppercase text-sm tracking-tight">Estructura SQL No Detectada</h3>
+                    <p className="text-xs font-medium">Las tablas en Supabase no han sido creadas o no son visibles aún.</p>
                   </div>
                 </div>
                 <div className="flex gap-3">
                   <button onClick={fetchData} className="px-6 py-2.5 bg-white border border-amber-200 text-amber-700 font-black text-[10px] uppercase rounded-xl hover:bg-amber-100 transition-all flex items-center gap-2">
-                    <RefreshCw size={14} /> Reintentar
+                    <RefreshCw size={14} /> Reintentar Detección
                   </button>
                   {currentUser.role === UserRole.ADMIN && (
-                    <Link to="/audit" className="px-6 py-2.5 bg-amber-600 text-white font-black text-[10px] uppercase rounded-xl hover:bg-amber-700 transition-all">Configurar Ahora</Link>
+                    <Link to="/audit" className="px-6 py-2.5 bg-amber-600 text-white font-black text-[10px] uppercase rounded-xl hover:bg-amber-700 transition-all">Ir a Configuración</Link>
                   )}
                 </div>
               </div>
@@ -333,7 +334,6 @@ const App: React.FC = () => {
               <Route path="/factory" element={<FactoryView orders={orders} />} />
               <Route path="/dispatch" element={<DispatchView orders={orders} updateOrder={updateOrder} />} />
               <Route path="/collection" element={<CollectionView orders={orders} updateOrder={updateOrder} customers={customers} setCustomers={setCustomers} />} />
-              {/* Added orders prop to pass state to AdminDashboard */}
               <Route path="/audit" element={<AdminDashboard logs={auditLogs} onRefresh={fetchData} dbReady={dbReady} orders={orders} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

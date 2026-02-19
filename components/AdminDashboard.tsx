@@ -15,6 +15,7 @@ interface Props {
 const AdminDashboard: React.FC<Props> = ({ logs, onRefresh, dbReady, orders }) => {
   const [activeTab, setActiveTab] = useState<'LOGS' | 'DATABASE'>('DATABASE');
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
   
   const [configUrl, setConfigUrl] = useState(localStorage.getItem('supabase_url') || '');
   const [configKey, setConfigKey] = useState(localStorage.getItem('supabase_key') || '');
@@ -33,6 +34,12 @@ const AdminDashboard: React.FC<Props> = ({ logs, onRefresh, dbReady, orders }) =
     });
   }, [dbReady]);
 
+  const handleRefreshConnection = async () => {
+    setIsChecking(true);
+    await onRefresh();
+    setTimeout(() => setIsChecking(false), 800);
+  };
+
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
     if (!configUrl.includes('supabase.co')) {
@@ -48,37 +55,45 @@ const AdminDashboard: React.FC<Props> = ({ logs, onRefresh, dbReady, orders }) =
   };
 
   const seedDatabase = async () => {
-    if (!confirm("¿Deseas cargar los datos maestros? Esto reemplazará productos y clientes existentes.")) return;
+    if (!confirm("¿Deseas cargar los datos maestros? Esto reemplazará productos y clientes actuales.")) return;
     
     setIsSeeding(true);
     try {
-      // 1. Limpieza rápida
+      // 1. Limpieza en orden jerárquico para evitar errores de FK
+      console.log("Iniciando limpieza de tablas...");
       await supabase.from('order_items').delete().neq('quantity', -1);
       await supabase.from('orders').delete().neq('total_amount', -1);
+      await supabase.from('gate_entries').delete().neq('quantity', -1);
+      await supabase.from('account_movements').delete().neq('amount', -1);
       await supabase.from('product_prices').delete().neq('price', -1);
       await supabase.from('customers').delete().neq('name', 'none');
       await supabase.from('products').delete().neq('name', 'none');
       await supabase.from('price_lists').delete().neq('name', 'none');
 
-      // 2. Listas de Precios
-      await supabase.from('price_lists').insert(
+      // 2. Carga de Listas
+      console.log("Cargando listas de precios...");
+      const { error: err1 } = await supabase.from('price_lists').insert(
         MOCK_PRICE_LISTS.map(l => ({ id: l.id, name: l.name, description: l.description }))
       );
+      if (err1) throw new Error(`Error en listas: ${err1.message}`);
 
-      // 3. Productos (incluyendo lógica de bonificación)
-      await supabase.from('products').insert(
+      // 3. Carga de Productos
+      console.log("Cargando productos...");
+      const { error: err2 } = await supabase.from('products').insert(
         MOCK_PRODUCTS.map(p => ({ 
           id: p.id, 
           name: p.name, 
           brand: p.brand, 
           category: p.category, 
           bonus_enabled: p.bonusEnabled,
-          bonus_threshold: 20, // Default threshold
-          bonus_percentage: 10  // Default percentage
+          bonus_threshold: 20,
+          bonus_percentage: 10
         }))
       );
+      if (err2) throw new Error(`Error en productos: ${err2.message}`);
 
-      // 4. Precios por Lista
+      // 4. Carga de Precios
+      console.log("Cargando precios...");
       const pricesToInsert: any[] = [];
       MOCK_PRODUCTS.forEach(p => {
         Object.entries(p.prices).forEach(([listId, price]) => {
@@ -89,10 +104,12 @@ const AdminDashboard: React.FC<Props> = ({ logs, onRefresh, dbReady, orders }) =
           });
         });
       });
-      await supabase.from('product_prices').insert(pricesToInsert);
+      const { error: err3 } = await supabase.from('product_prices').insert(pricesToInsert);
+      if (err3) throw new Error(`Error en precios: ${err3.message}`);
 
-      // 5. Clientes
-      await supabase.from('customers').insert(
+      // 5. Carga de Clientes
+      console.log("Cargando clientes...");
+      const { error: err4 } = await supabase.from('customers').insert(
         MOCK_CUSTOMERS.map(c => ({
           id: c.id,
           name: c.name,
@@ -101,31 +118,30 @@ const AdminDashboard: React.FC<Props> = ({ logs, onRefresh, dbReady, orders }) =
           is_blocked: c.isBlocked
         }))
       );
+      if (err4) throw new Error(`Error en clientes: ${err4.message}`);
 
-      alert("¡Sistema inicializado correctamente!");
+      alert("¡Inicialización completada con éxito! Ya puedes operar el sistema.");
       onRefresh();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert("Error en seeding. Revisa que las tablas existan en Supabase.");
+      alert(`Error en el proceso: ${error.message || 'Error desconocido'}. Asegúrate de que las tablas se crearon correctamente en Supabase.`);
     } finally {
       setIsSeeding(false);
     }
   };
 
   const sqlSchema = `-- ERP CHAZARRETA v1.0 - Esquema PostgreSQL
--- Ejecutar en Supabase SQL Editor
+-- 1. Borrar tablas previas
+DROP TABLE IF EXISTS order_items CASCADE;
+DROP TABLE IF EXISTS orders CASCADE;
+DROP TABLE IF EXISTS product_prices CASCADE;
+DROP TABLE IF EXISTS customers CASCADE;
+DROP TABLE IF EXISTS products CASCADE;
+DROP TABLE IF EXISTS price_lists CASCADE;
+DROP TABLE IF EXISTS account_movements CASCADE;
+DROP TABLE IF EXISTS gate_entries CASCADE;
 
--- Limpiar si existen
-DROP TABLE IF EXISTS order_items;
-DROP TABLE IF EXISTS orders;
-DROP TABLE IF EXISTS product_prices;
-DROP TABLE IF EXISTS customers;
-DROP TABLE IF EXISTS products;
-DROP TABLE IF EXISTS price_lists;
-DROP TABLE IF EXISTS account_movements;
-DROP TABLE IF EXISTS gate_entries;
-
--- Estructura de Catálogo
+-- 2. Crear Estructura Maestro
 CREATE TABLE price_lists (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -161,10 +177,9 @@ CREATE TABLE customers (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Transacciones
 CREATE TABLE orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    customer_id TEXT REFERENCES customers(id),
+    customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
     customer_name TEXT,
     status TEXT DEFAULT 'PENDING',
     total_amount DECIMAL(12,2) DEFAULT 0,
@@ -181,7 +196,6 @@ CREATE TABLE order_items (
     unit_price DECIMAL(12,2) NOT NULL
 );
 
--- Otros Registros
 CREATE TABLE gate_entries (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     customer_id TEXT REFERENCES customers(id),
@@ -194,7 +208,7 @@ CREATE TABLE gate_entries (
 CREATE TABLE account_movements (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     customer_id TEXT REFERENCES customers(id),
-    type TEXT, -- 'DEBIT' o 'CREDIT'
+    type TEXT,
     amount DECIMAL(12,2),
     description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -204,8 +218,8 @@ CREATE TABLE account_movements (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Configuración Cloud</h1>
-          <p className="text-slate-500 font-medium">Gestión del motor PostgreSQL y sincronización.</p>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Panel Administrativo</h1>
+          <p className="text-slate-500 font-medium">Configuración de infraestructura y datos cloud.</p>
         </div>
         <div className="flex bg-white p-1.5 rounded-[1.5rem] border border-slate-200 shadow-sm">
           <button 
@@ -235,8 +249,8 @@ CREATE TABLE account_movements (
                     <Key size={24} />
                   </div>
                   <div>
-                    <h3 className="text-slate-800 font-black text-lg uppercase tracking-tight leading-none mb-2">1. Conexión API</h3>
-                    <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Estado: {connectionStats.client ? 'Vinculado' : 'Pendiente'}</p>
+                    <h3 className="text-slate-800 font-black text-lg uppercase tracking-tight leading-none mb-2">1. Conexión con Supabase</h3>
+                    <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Credenciales del Proyecto</p>
                   </div>
                 </div>
                 {connectionStats.client && <CheckCircle2 className="text-emerald-500" size={24} />}
@@ -248,24 +262,24 @@ CREATE TABLE account_movements (
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Project URL</label>
                     <input 
                       type="text" 
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10"
                       value={configUrl}
                       onChange={e => setConfigUrl(e.target.value)}
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Anon Key</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Anon / Public Key</label>
                     <input 
                       type="password" 
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10"
                       value={configKey}
                       onChange={e => setConfigKey(e.target.value)}
                     />
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-100">
-                    <RefreshCw size={16} /> Guardar Cambios
+                  <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 flex items-center justify-center gap-2">
+                    <RefreshCw size={16} /> Guardar Credenciales
                   </button>
                   <button type="button" onClick={clearSupabaseConfig} className="p-4 bg-red-50 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all border border-red-100">
                     <Trash2 size={20} />
@@ -275,7 +289,7 @@ CREATE TABLE account_movements (
             </div>
 
             {/* 2. SQL EDITOR */}
-            <div className={`bg-slate-900 rounded-[2.5rem] p-8 text-slate-300 border border-white/10 shadow-2xl relative overflow-hidden group transition-all ${!connectionStats.client ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
+            <div className={`bg-slate-900 rounded-[2.5rem] p-8 text-slate-300 border border-white/10 shadow-2xl relative overflow-hidden group transition-all ${!connectionStats.client ? 'opacity-20 pointer-events-none scale-95' : 'opacity-100'}`}>
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
                   <div className="p-3 bg-blue-500/20 text-blue-400 rounded-2xl">
@@ -286,12 +300,21 @@ CREATE TABLE account_movements (
                     <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">Esquema Relacional PostgreSQL</p>
                   </div>
                 </div>
-                <button 
-                  onClick={() => copyToClipboard(sqlSchema)}
-                  className="bg-blue-600 hover:bg-blue-500 px-6 py-2.5 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-white shadow-xl shadow-blue-500/20"
-                >
-                  <Copy size={16} /> Copiar SQL
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={handleRefreshConnection}
+                    disabled={isChecking}
+                    className="bg-white/5 hover:bg-white/10 px-6 py-2.5 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-white border border-white/10"
+                  >
+                    <RefreshCw className={isChecking ? 'animate-spin' : ''} size={16} /> Re-comprobar
+                  </button>
+                  <button 
+                    onClick={() => copyToClipboard(sqlSchema)}
+                    className="bg-blue-600 hover:bg-blue-500 px-6 py-2.5 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-white shadow-xl shadow-blue-500/20"
+                  >
+                    <Copy size={16} /> Copiar SQL
+                  </button>
+                </div>
               </div>
               <pre className="bg-black/40 p-6 rounded-2xl font-mono text-[11px] overflow-x-auto border border-white/5 leading-relaxed text-blue-300 custom-scrollbar max-h-[300px]">
                 {sqlSchema}
@@ -299,7 +322,7 @@ CREATE TABLE account_movements (
             </div>
 
             {/* 3. SEEDING */}
-            <div className={`bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/50 transition-all ${!connectionStats.schema ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
+            <div className={`bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/50 transition-all ${!connectionStats.schema ? 'opacity-20 pointer-events-none scale-95' : 'opacity-100'}`}>
                <div className="flex items-center justify-between mb-8">
                   <div className="flex items-start gap-4">
                     <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
@@ -307,24 +330,32 @@ CREATE TABLE account_movements (
                     </div>
                     <div>
                        <h3 className="text-slate-800 font-black text-lg uppercase tracking-tight mb-2">3. Inicialización de Datos</h3>
-                       <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Cargar Productos y Clientes por defecto</p>
+                       <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Cargar Catálogo y Clientes Maestros</p>
                     </div>
                   </div>
+                  {orders.length > 0 && <span className="px-4 py-1.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-black uppercase tracking-widest">Datos Listos</span>}
                </div>
+               
                <button 
                 onClick={seedDatabase}
                 disabled={isSeeding}
-                className="w-full flex items-center justify-center gap-3 py-5 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl shadow-emerald-100 transition-all disabled:opacity-20"
+                className="w-full flex items-center justify-center gap-3 py-5 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl shadow-emerald-100 transition-all disabled:opacity-50"
                >
                  {isSeeding ? <Activity className="animate-spin" size={20} /> : <Play size={20} />}
-                 {isSeeding ? "Sincronizando..." : "Ejecutar Inicialización"}
+                 {isSeeding ? "Sincronizando con Supabase..." : "Ejecutar Paso 3: Inicializar Sistema"}
                </button>
+               
+               {!connectionStats.schema && (
+                 <p className="text-center mt-4 text-[10px] font-black text-red-400 uppercase tracking-widest animate-pulse">
+                   Primero debes ejecutar el SQL del Paso 2 en Supabase y presionar "Re-comprobar"
+                 </p>
+               )}
             </div>
           </div>
 
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-[#0f172a] p-8 rounded-[2.5rem] text-white shadow-2xl">
-              <Cloud size={40} className="mb-6 text-blue-500" />
+              <Cloud size={40} className="mb-6 text-blue-500 opacity-50" />
               <h3 className="text-xl font-black mb-6 uppercase tracking-tight">Estatus Global</h3>
               <div className="space-y-4">
                 <StatusItem label="API Conectada" status={connectionStats.client} />
@@ -332,37 +363,34 @@ CREATE TABLE account_movements (
                 <StatusItem label="Datos Cargados" status={connectionStats.schema && orders.length > 0} />
               </div>
               <a 
-                href="https://supabase.com/dashboard/projects" 
+                href="https://supabase.com/dashboard/project/_/sql" 
                 target="_blank" 
                 rel="noreferrer"
                 className="mt-8 flex items-center justify-center gap-2 w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all"
               >
-                Panel de Supabase <ExternalLink size={14} />
+                Abrir Supabase SQL Editor <ExternalLink size={14} />
               </a>
             </div>
 
-            <div className="bg-amber-50 p-8 rounded-[2.5rem] border border-amber-100">
-               <h4 className="font-black text-amber-800 uppercase tracking-tight text-sm mb-4 flex items-center gap-2">
-                 <AlertTriangle size={16} /> Importante
-               </h4>
-               <p className="text-xs text-amber-700 font-medium leading-relaxed">
-                 Si realizas cambios en el esquema SQL (tablas), recuerda volver a ejecutar el código en Supabase. El botón de Inicialización borrará los datos actuales para evitar duplicados.
-               </p>
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200">
+               <h4 className="font-black text-slate-800 uppercase tracking-tight text-sm mb-4">¿El botón no responde?</h4>
+               <ul className="space-y-4">
+                  <li className="flex gap-3">
+                    <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-black shrink-0">1</div>
+                    <p className="text-[11px] text-slate-500 font-medium">Asegúrate de que el Paso 2 tenga el check verde <CheckCircle2 size={12} className="inline"/>.</p>
+                  </li>
+                  <li className="flex gap-3">
+                    <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-black shrink-0">2</div>
+                    <p className="text-[11px] text-slate-500 font-medium">Si acabas de ejecutar el SQL, presiona el botón gris de <b>"Re-comprobar"</b> arriba.</p>
+                  </li>
+               </ul>
             </div>
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl p-8">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="p-3 bg-slate-100 text-slate-600 rounded-2xl">
-              <ShieldCheck size={24} />
-            </div>
-            <h2 className="font-black text-slate-800 text-xl tracking-tight uppercase">Auditoría Cloud</h2>
-          </div>
-          <div className="text-center py-32 opacity-20">
-             <History size={64} className="mx-auto mb-4" />
-             <p className="font-black uppercase tracking-widest text-sm">Historial de Sincronización Vacío</p>
-          </div>
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl p-8 text-center py-40">
+           <History size={64} className="mx-auto mb-4 text-slate-200" />
+           <p className="font-black uppercase tracking-widest text-slate-300">Historial de Auditoría Vacío</p>
         </div>
       )}
     </div>
@@ -370,9 +398,9 @@ CREATE TABLE account_movements (
 };
 
 const StatusItem: React.FC<{label: string, status: boolean}> = ({ label, status }) => (
-  <div className={`flex items-center justify-between p-4 rounded-2xl border ${status ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-white/5 border-white/5 opacity-50'}`}>
-    <span className="text-[10px] font-black uppercase tracking-widest">{label}</span>
-    {status ? <CheckCircle2 size={16} className="text-emerald-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-600" />}
+  <div className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${status ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-white/5 border-white/5 opacity-50'}`}>
+    <span className={`text-[10px] font-black uppercase tracking-widest ${status ? 'text-emerald-400' : 'text-slate-500'}`}>{label}</span>
+    {status ? <CheckCircle2 size={16} className="text-emerald-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-700" />}
   </div>
 );
 
