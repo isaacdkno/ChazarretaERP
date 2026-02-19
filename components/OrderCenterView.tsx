@@ -18,9 +18,10 @@ import {
   History,
   TrendingUp as TrendingUpIcon,
   ChevronRight,
-  Zap
+  Zap,
+  Filter
 } from 'lucide-react';
-import { Order, OrderStatus, OrderItem, Product, Customer, BonusConfig, PriceList } from '../types';
+import { Order, OrderStatus, OrderItem, Product, Customer, PriceList } from '../types';
 import { MOCK_CUSTOMERS, MOCK_PRODUCTS, MOCK_PRICE_LISTS } from '../constants';
 
 interface Props {
@@ -32,50 +33,12 @@ interface Props {
 const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder }) => {
   const [activeTab, setActiveTab] = useState<'VALIDATE' | 'CREATE' | 'CATALOG' | 'PRICES'>('CATALOG');
   const [searchQuery, setSearchQuery] = useState('');
-  const [bulkPriceChange, setBulkPriceChange] = useState<string>('');
-
-  const [bonusConfig, setBonusConfig] = useState<BonusConfig>({
-    threshold: 20,
-    percentage: 10
-  });
-
   const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
-  const [newOrderCustomer, setNewOrderCustomer] = useState<string>('');
-  const [cart, setCart] = useState<{ [id: string]: number }>({});
 
-  const pendingOrders = orders.filter(o => o.status === OrderStatus.PENDING || o.status === OrderStatus.VALIDATED);
-
-  const applyBulkPriceIncrease = () => {
-    const percentage = parseFloat(bulkPriceChange);
-    if (isNaN(percentage)) return;
-    const factor = 1 + (percentage / 100);
-    const updatedProducts = products.map(p => {
-      const newPrices = { ...p.prices };
-      Object.keys(newPrices).forEach(listId => {
-        newPrices[listId] = Math.round(newPrices[listId] * factor);
-      });
-      return { ...p, prices: newPrices };
-    });
-    setProducts(updatedProducts);
-    setBulkPriceChange('');
-  };
-
-  const updateItemQty = (order: Order, itemId: string, newQty: number) => {
-    const updatedItems = order.items.map(item => {
-      if (item.id === itemId) {
-        const prod = products.find(p => p.id === item.productId);
-        const threshold = prod?.bonusThreshold || bonusConfig.threshold;
-        const percentage = prod?.bonusPercentage || bonusConfig.percentage;
-        const bonusQty = (prod?.bonusEnabled && newQty >= threshold) 
-          ? Math.floor(newQty * (percentage / 100)) 
-          : 0;
-        return { ...item, quantity: Math.max(0, newQty), bonusQuantity: bonusQty };
-      }
-      return item;
-    });
-    const newTotal = updatedItems.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
-    updateOrder({ ...order, items: updatedItems, totalAmount: newTotal });
-  };
+  const filteredProducts = products.filter(p => 
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    p.brand.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
@@ -105,124 +68,131 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder }) => 
 
       {activeTab === 'CATALOG' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-           {/* Reglas de Bonificación Automática (Globales) */}
-           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-4 mb-8">
-              <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner">
-                <Percent size={24} />
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-800 tracking-tight">Reglas de Bonificación Automática</h3>
-                <p className="text-sm text-slate-500 font-medium">Define el comportamiento estándar para productos bonificables.</p>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-end">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Umbral Mínimo (unidades)</label>
-                <input 
-                  type="number" 
-                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 outline-none font-bold text-slate-700 transition-all"
-                  value={bonusConfig.threshold}
-                  onChange={e => setBonusConfig({...bonusConfig, threshold: parseInt(e.target.value) || 0})}
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Porcentaje (%)</label>
-                <div className="relative">
-                  <input 
-                    type="number" 
-                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 outline-none font-bold text-slate-700 transition-all"
-                    value={bonusConfig.percentage}
-                    onChange={e => setBonusConfig({...bonusConfig, percentage: parseInt(e.target.value) || 0})}
-                  />
-                  <span className="absolute right-5 top-1/2 -translate-y-1/2 font-black text-slate-300">%</span>
-                </div>
-              </div>
-              <div className="flex gap-4 p-5 bg-blue-50/50 border border-blue-100 rounded-2xl text-blue-700 text-xs items-center leading-relaxed font-medium">
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
-                  <Info size={16} />
-                </div>
-                <span>Calculado: Por cada {bonusConfig.threshold} unidades, el cliente recibe {Math.floor(bonusConfig.threshold * (bonusConfig.percentage / 100))}u sin cargo adicionales.</span>
-              </div>
-            </div>
-          </div>
-          
-          {/* Activar y Personalizar por Producto */}
           <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden">
-             <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-               <h3 className="font-black text-slate-800 uppercase tracking-tight">Configuración Específica por Producto</h3>
-               <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <Zap size={14} className="text-amber-500" /> Sobreescribe Regla Global
+             {/* Header con buscador interno */}
+             <div className="px-8 py-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
+               <div>
+                 <h3 className="font-black text-slate-800 uppercase tracking-tight text-lg">Reglas por Producto</h3>
+                 <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Configuración individual de mercadería sin cargo</p>
+               </div>
+               <div className="relative">
+                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                 <input 
+                  type="text"
+                  placeholder="Filtrar productos..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-4 focus:ring-blue-500/10 outline-none w-full md:w-64 transition-all"
+                 />
                </div>
              </div>
              
              <div className="divide-y divide-slate-100">
-                {products.map(p => (
-                  <div key={p.id} className="p-8 hover:bg-slate-50/50 transition-all group">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                      <div className="flex items-center gap-4 min-w-[300px]">
-                        <input 
-                          type="checkbox" 
-                          checked={p.bonusEnabled}
-                          onChange={() => setProducts(products.map(prod => prod.id === p.id ? {...prod, bonusEnabled: !prod.bonusEnabled} : prod))}
-                          className="w-6 h-6 rounded-lg text-blue-600 focus:ring-blue-500 border-slate-300 transition-all"
-                        />
+                {filteredProducts.map(p => (
+                  <div key={p.id} className={`p-8 transition-all group ${p.bonusEnabled ? 'bg-white' : 'bg-slate-50/30 opacity-70'}`}>
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8">
+                      {/* Identificación del Producto */}
+                      <div className="flex items-center gap-5 min-w-[320px]">
+                        <div className="relative">
+                          <input 
+                            type="checkbox" 
+                            checked={p.bonusEnabled}
+                            onChange={() => setProducts(products.map(prod => prod.id === p.id ? {...prod, bonusEnabled: !prod.bonusEnabled} : prod))}
+                            className="w-7 h-7 rounded-xl text-blue-600 focus:ring-blue-500 border-slate-300 transition-all cursor-pointer"
+                          />
+                          {p.bonusEnabled && (
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full animate-ping opacity-20"></div>
+                          )}
+                        </div>
                         <div>
-                          <p className="font-black text-slate-800 text-lg group-hover:text-blue-600 transition-colors uppercase tracking-tight">{p.name}</p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{p.brand} • {p.category}</p>
+                          <p className={`font-black text-xl tracking-tight uppercase ${p.bonusEnabled ? 'text-slate-800' : 'text-slate-400'}`}>
+                            {p.name}
+                          </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{p.brand}</span>
+                            <span className="text-[10px] text-slate-300">•</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{p.category}</span>
+                          </div>
                         </div>
                       </div>
 
-                      {p.bonusEnabled && (
-                        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-left-4">
-                          <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-black text-slate-400 uppercase w-20">Umbral:</span>
-                            <input 
-                              type="number"
-                              placeholder={`Global (${bonusConfig.threshold})`}
-                              className="bg-white border border-slate-200 px-4 py-2 rounded-xl text-sm font-bold w-full focus:ring-2 focus:ring-blue-500 outline-none"
-                              value={p.bonusThreshold || ''}
-                              onChange={e => {
-                                const val = parseInt(e.target.value) || undefined;
-                                setProducts(products.map(prod => prod.id === p.id ? {...prod, bonusThreshold: val} : prod));
-                              }}
-                            />
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-black text-slate-400 uppercase w-20">Porcentaje:</span>
-                            <div className="relative w-full">
+                      {/* Configuración Granular */}
+                      {p.bonusEnabled ? (
+                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-6 animate-in zoom-in-95 duration-200">
+                          <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Umbral Mínimo</label>
+                            <div className="relative">
                               <input 
                                 type="number"
-                                placeholder={`Global (${bonusConfig.percentage})`}
-                                className="bg-white border border-slate-200 px-4 py-2 rounded-xl text-sm font-bold w-full focus:ring-2 focus:ring-blue-500 outline-none"
+                                placeholder="Ej: 20"
+                                className="bg-white border border-slate-200 px-5 py-3 rounded-2xl text-base font-black w-full focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all shadow-sm"
+                                value={p.bonusThreshold || ''}
+                                onChange={e => {
+                                  const val = parseInt(e.target.value) || undefined;
+                                  setProducts(products.map(prod => prod.id === p.id ? {...prod, bonusThreshold: val} : prod));
+                                }}
+                              />
+                              <span className="absolute right-5 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300 uppercase">Uni</span>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Bonificación</label>
+                            <div className="relative">
+                              <input 
+                                type="number"
+                                placeholder="Ej: 10"
+                                className="bg-white border border-slate-200 px-5 py-3 rounded-2xl text-base font-black w-full focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all shadow-sm"
                                 value={p.bonusPercentage || ''}
                                 onChange={e => {
                                   const val = parseInt(e.target.value) || undefined;
                                   setProducts(products.map(prod => prod.id === p.id ? {...prod, bonusPercentage: val} : prod));
                                 }}
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 font-bold">%</span>
+                              <span className="absolute right-5 top-1/2 -translate-y-1/2 text-lg font-black text-slate-300">%</span>
                             </div>
                           </div>
                         </div>
+                      ) : (
+                        <div className="flex-1 flex items-center justify-center lg:justify-end">
+                           <span className="px-6 py-2 rounded-full border border-slate-100 text-slate-300 text-[10px] font-black uppercase tracking-widest bg-slate-50/50">Sin Bonificación</span>
+                        </div>
                       )}
                       
-                      {!p.bonusEnabled && (
-                        <div className="flex-1 text-right italic text-slate-300 text-sm font-medium">Bonificación desactivada para este artículo</div>
+                      {/* Indicador de cálculo rápido */}
+                      {p.bonusEnabled && p.bonusThreshold && p.bonusPercentage && (
+                        <div className="lg:w-48 bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-center gap-3">
+                           <div className="w-8 h-8 bg-emerald-500 text-white rounded-xl flex items-center justify-center shrink-0">
+                              <Zap size={14} className="fill-white" />
+                           </div>
+                           <div className="leading-none">
+                              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-tighter mb-1">Impacto estimado</p>
+                              <p className="text-xs font-bold text-emerald-700">+{Math.floor(p.bonusThreshold * (p.bonusPercentage / 100))}u Sin Cargo</p>
+                           </div>
+                        </div>
                       )}
                     </div>
                   </div>
                 ))}
+                {filteredProducts.length === 0 && (
+                  <div className="p-20 text-center">
+                    <Package className="mx-auto mb-4 text-slate-200" size={48} />
+                    <p className="text-slate-400 font-bold">No se encontraron productos para configurar.</p>
+                  </div>
+                )}
              </div>
           </div>
         </div>
       )}
 
-      {/* Las otras pestañas se mantienen igual... (Omitidas para brevedad pero operativas) */}
-      {activeTab === 'PRICES' && <div className="p-8 bg-white rounded-3xl border border-slate-200 text-slate-400 italic">Módulo de Precios Cargado...</div>}
-      {activeTab === 'VALIDATE' && <div className="p-8 bg-white rounded-3xl border border-slate-200 text-slate-400 italic">Módulo de Validación Cargado...</div>}
-      {activeTab === 'CREATE' && <div className="p-8 bg-white rounded-3xl border border-slate-200 text-slate-400 italic">Módulo de Carga Manual Cargado...</div>}
+      {activeTab === 'PRICES' && (
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl p-12 text-center">
+           <Layers className="mx-auto mb-6 text-blue-100" size={64} />
+           <h3 className="text-xl font-black text-slate-800 mb-2">Gestión de Tarifarios</h3>
+           <p className="text-slate-500 max-w-md mx-auto">Este módulo permite la actualización masiva de precios por lista (Distribuidores, Supermercados, Sucursales).</p>
+        </div>
+      )}
+      {activeTab === 'VALIDATE' && <div className="p-8 bg-white rounded-[2.5rem] border border-slate-200 text-slate-400 italic font-bold uppercase tracking-widest text-center">Módulo de Validación de Comandas</div>}
+      {activeTab === 'CREATE' && <div className="p-8 bg-white rounded-[2.5rem] border border-slate-200 text-slate-400 italic font-bold uppercase tracking-widest text-center">Módulo de Carga Manual</div>}
     </div>
   );
 };

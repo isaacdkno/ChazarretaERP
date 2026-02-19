@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ShoppingCart, Plus, Minus, Search, Trash2, CheckCircle2, Percent, Zap } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Search, Trash2, CheckCircle2, Percent, Zap, Package } from 'lucide-center';
 import { Product, Customer, Order, OrderStatus, OrderItem } from '../types';
 
 interface Props {
@@ -14,9 +14,9 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products }) => 
   const [search, setSearch] = useState('');
   const [success, setSuccess] = useState(false);
 
-  // Valores Globales por Defecto
-  const DEFAULT_BONUS_THRESHOLD = 20;
-  const DEFAULT_BONUS_PERCENTAGE = 10;
+  // SAFE DEFAULTS INTERNOS (Solo si el admin olvida configurar pero activa el switch)
+  const FALLBACK_THRESHOLD = 20;
+  const FALLBACK_PERCENTAGE = 10;
 
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -45,13 +45,15 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products }) => 
       const qty = cart[id];
       const product = products.find(p => p.id === id)!;
       
-      // LÓGICA DE HERENCIA: Producto > Global
-      const threshold = product.bonusThreshold || DEFAULT_BONUS_THRESHOLD;
-      const percentage = product.bonusPercentage || DEFAULT_BONUS_PERCENTAGE;
-      
       let bonusQty = 0;
-      if (product.bonusEnabled && qty >= threshold) {
-        bonusQty = Math.floor(qty * (percentage / 100));
+      if (product.bonusEnabled) {
+        // Usa config específica, si no existe usa el fallback interno
+        const threshold = product.bonusThreshold || FALLBACK_THRESHOLD;
+        const percentage = product.bonusPercentage || FALLBACK_PERCENTAGE;
+        
+        if (qty >= threshold) {
+          bonusQty = Math.floor(qty * (percentage / 100));
+        }
       }
       
       const unitPrice = product.prices[priceListId] || 0;
@@ -101,7 +103,7 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products }) => 
               placeholder="Buscar productos..." 
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="pl-12 pr-6 py-3 border border-slate-200 rounded-[1.5rem] focus:ring-4 focus:ring-blue-500/10 outline-none w-full md:w-80 font-medium"
+              className="pl-12 pr-6 py-3 border border-slate-200 rounded-[1.5rem] focus:ring-4 focus:ring-blue-500/10 outline-none w-full md:w-80 font-medium transition-all"
             />
           </div>
         </div>
@@ -111,18 +113,20 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products }) => 
             const customer = customers[0];
             const priceListId = customer?.priceListId || 'l1';
             const unitPrice = product.prices[priceListId] || 0;
-            const threshold = product.bonusThreshold || DEFAULT_BONUS_THRESHOLD;
-            const percentage = product.bonusPercentage || DEFAULT_BONUS_PERCENTAGE;
+            
+            // Lógica de visualización para el catálogo
+            const threshold = product.bonusThreshold || FALLBACK_THRESHOLD;
+            const percentage = product.bonusPercentage || FALLBACK_PERCENTAGE;
             
             return (
-              <div key={product.id} className="bg-white border border-slate-200 p-6 rounded-[2rem] flex flex-col justify-between hover:shadow-xl hover:border-blue-200 transition-all group">
+              <div key={product.id} className={`bg-white border border-slate-200 p-6 rounded-[2rem] flex flex-col justify-between hover:shadow-xl hover:border-blue-200 transition-all group ${product.bonusEnabled ? 'ring-2 ring-emerald-500/5' : ''}`}>
                 <div className="mb-6">
                   <div className="flex justify-between items-start mb-3">
                     <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full ${product.brand === 'La Fornarina' ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>
                       {product.brand}
                     </span>
                     {product.bonusEnabled && (
-                      <div className="flex items-center gap-1 text-emerald-600">
+                      <div className="flex items-center gap-1 text-emerald-600 animate-pulse">
                          <Zap size={14} className="fill-emerald-600" />
                          <span className="text-[10px] font-black uppercase tracking-tighter">Oferta Activa</span>
                       </div>
