@@ -115,13 +115,15 @@ const App: React.FC = () => {
           customerId: o.customer_id,
           customerName: o.customer_name || 'Desconocido',
           status: o.status as OrderStatus,
-          total_amount: o.total_amount,
+          // Fixed: Use camelCase to match Order interface in types.ts
+          totalAmount: o.total_amount,
           createdAt: o.created_at,
           signatureUrl: o.signature_url,
           items: (o.order_items || []).map((i: any) => ({
             id: i.id,
             productId: i.product_id,
             quantity: i.quantity,
+            // Fixed: Use camelCase to match OrderItem interface in types.ts
             bonusQuantity: i.bonus_quantity,
             unitPrice: i.unit_price
           }))
@@ -331,7 +333,8 @@ const App: React.FC = () => {
               <Route path="/factory" element={<FactoryView orders={orders} />} />
               <Route path="/dispatch" element={<DispatchView orders={orders} updateOrder={updateOrder} />} />
               <Route path="/collection" element={<CollectionView orders={orders} updateOrder={updateOrder} customers={customers} setCustomers={setCustomers} />} />
-              <Route path="/audit" element={<AdminDashboard logs={auditLogs} onRefresh={fetchData} dbReady={dbReady} />} />
+              {/* Added orders prop to pass state to AdminDashboard */}
+              <Route path="/audit" element={<AdminDashboard logs={auditLogs} onRefresh={fetchData} dbReady={dbReady} orders={orders} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </div>
