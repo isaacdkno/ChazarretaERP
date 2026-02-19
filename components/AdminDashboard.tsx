@@ -1,17 +1,32 @@
 
-import React, { useState } from 'react';
-import { ShieldCheck, Database, History, Terminal, Cloud, Github, CheckCircle2, Copy, Play, AlertTriangle } from 'lucide-react';
-import { AuditLog, Product, Customer } from '../types';
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, Database, History, Terminal, Cloud, CheckCircle2, Copy, Play, AlertTriangle, Search, Activity, Server } from 'lucide-react';
+import { AuditLog } from '../types';
 import { supabase } from '../supabase';
 import { MOCK_PRODUCTS, MOCK_CUSTOMERS, MOCK_PRICE_LISTS } from '../constants';
 
 interface Props {
   logs: AuditLog[];
+  onRefresh: () => void;
+  dbReady: boolean | 'ERROR';
 }
 
-const AdminDashboard: React.FC<Props> = ({ logs }) => {
+const AdminDashboard: React.FC<Props> = ({ logs, onRefresh, dbReady }) => {
   const [activeTab, setActiveTab] = useState<'LOGS' | 'DATABASE'>('DATABASE');
   const [isSeeding, setIsSeeding] = useState(false);
+  const [connectionStats, setConnectionStats] = useState({
+    client: false,
+    schema: false,
+    seeding: false
+  });
+
+  useEffect(() => {
+    setConnectionStats({
+      client: !!(supabase as any).supabaseUrl && !!(supabase as any).supabaseKey,
+      schema: dbReady === true,
+      seeding: false // Check this based on actual table counts if needed
+    });
+  }, [dbReady]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -19,17 +34,17 @@ const AdminDashboard: React.FC<Props> = ({ logs }) => {
   };
 
   const seedDatabase = async () => {
-    if (!confirm("¿Deseas cargar los datos iniciales de prueba en Supabase? Esto podría duplicar datos si ya existen.")) return;
+    if (!confirm("¿Deseas cargar los productos, listas y clientes iniciales en Supabase?")) return;
     
     setIsSeeding(true);
     try {
       // 1. Insertar Listas de Precios
-      const { data: priceLists } = await supabase.from('price_lists').insert(
+      await supabase.from('price_lists').insert(
         MOCK_PRICE_LISTS.map(l => ({ id: l.id, name: l.name, description: l.description }))
-      ).select();
+      );
 
       // 2. Insertar Productos
-      const { data: products } = await supabase.from('products').insert(
+      await supabase.from('products').insert(
         MOCK_PRODUCTS.map(p => ({ 
           id: p.id, 
           name: p.name, 
@@ -37,9 +52,9 @@ const AdminDashboard: React.FC<Props> = ({ logs }) => {
           category: p.category, 
           bonus_enabled: p.bonusEnabled 
         }))
-      ).select();
+      );
 
-      // 3. Insertar Precios (Tabla product_prices)
+      // 3. Insertar Precios
       const pricesToInsert: any[] = [];
       MOCK_PRODUCTS.forEach(p => {
         Object.entries(p.prices).forEach(([listId, price]) => {
@@ -63,8 +78,8 @@ const AdminDashboard: React.FC<Props> = ({ logs }) => {
         }))
       );
 
-      alert("¡Base de Datos inicializada con éxito!");
-      window.location.reload();
+      alert("¡Datos cargados correctamente!");
+      onRefresh();
     } catch (error) {
       console.error(error);
       alert("Error al sembrar datos. Asegúrate de haber ejecutado el SQL primero.");
@@ -74,12 +89,9 @@ const AdminDashboard: React.FC<Props> = ({ logs }) => {
   };
 
   const sqlSchema = `-- ERP CHAZARRETA v1.0 - Database Schema
--- Copia y pega esto en tu SQL Editor de Supabase
+-- Pegar en SQL Editor de Supabase y dar RUN.
 
--- 1. Extensiones
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
--- 2. Tablas Maestras
+-- 1. Tablas Maestras
 CREATE TABLE IF NOT EXISTS price_lists (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -98,8 +110,8 @@ CREATE TABLE IF NOT EXISTS products (
 
 CREATE TABLE IF NOT EXISTS product_prices (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    product_id TEXT REFERENCES products(id),
-    price_list_id TEXT REFERENCES price_lists(id),
+    product_id TEXT REFERENCES products(id) ON DELETE CASCADE,
+    price_list_id TEXT REFERENCES price_lists(id) ON DELETE CASCADE,
     price DECIMAL(12,2) NOT NULL,
     UNIQUE(product_id, price_list_id)
 );
@@ -146,7 +158,7 @@ CREATE TABLE IF NOT EXISTS account_movements (
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Sistemas & Cloud</h1>
-          <p className="text-slate-500 font-medium">Configuración de persistencia en Supabase.</p>
+          <p className="text-slate-500 font-medium">Panel técnico de mantenimiento de base de datos.</p>
         </div>
         <div className="flex bg-white p-1.5 rounded-[1.5rem] border border-slate-200 shadow-sm">
           <button 
@@ -165,10 +177,10 @@ CREATE TABLE IF NOT EXISTS account_movements (
       </header>
 
       {activeTab === 'DATABASE' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="lg:col-span-8 space-y-6">
             <div className="bg-slate-900 rounded-[2.5rem] p-8 text-slate-300 border border-white/10 shadow-2xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+              <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
                  <Terminal size={120} />
               </div>
               <div className="flex items-center justify-between mb-6">
@@ -177,8 +189,8 @@ CREATE TABLE IF NOT EXISTS account_movements (
                     <Database size={24} />
                   </div>
                   <div>
-                    <h3 className="text-white font-black text-lg uppercase tracking-tight">Esquema SQL Maestro</h3>
-                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Paso 1: Crear Estructura</p>
+                    <h3 className="text-white font-black text-lg uppercase tracking-tight">Script de Inicialización SQL</h3>
+                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Esquema Maestro Chazarreta</p>
                   </div>
                 </div>
                 <button 
@@ -188,58 +200,65 @@ CREATE TABLE IF NOT EXISTS account_movements (
                   <Copy size={16} /> Copiar SQL
                 </button>
               </div>
-              <pre className="bg-black/50 p-6 rounded-2xl font-mono text-[11px] overflow-x-auto border border-white/5 leading-relaxed text-blue-300 custom-scrollbar max-h-[400px]">
+              <pre className="bg-black/40 p-6 rounded-2xl font-mono text-[11px] overflow-x-auto border border-white/5 leading-relaxed text-blue-300 custom-scrollbar max-h-[400px]">
                 {sqlSchema}
               </pre>
             </div>
 
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/50">
-               <div className="flex items-start gap-4 mb-6">
-                  <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl">
-                     <AlertTriangle size={24} />
+               <div className="flex items-start gap-4 mb-8">
+                  <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
+                     <Server size={24} />
                   </div>
                   <div>
-                     <h3 className="text-slate-800 font-black text-lg uppercase tracking-tight">Instalador de Datos</h3>
-                     <p className="text-slate-500 text-sm font-medium">Paso 2: Si ya creaste las tablas, carga los productos y clientes iniciales.</p>
+                     <h3 className="text-slate-800 font-black text-lg uppercase tracking-tight">Sembrado de Datos Maestro</h3>
+                     <p className="text-slate-500 text-sm font-medium">Carga las listas de precios, productos de La Fornarina/Villecco y clientes base.</p>
                   </div>
                </div>
                <button 
                 onClick={seedDatabase}
-                disabled={isSeeding}
-                className="w-full flex items-center justify-center gap-3 py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl shadow-emerald-100 transition-all disabled:opacity-50"
+                disabled={isSeeding || !connectionStats.schema}
+                className="w-full flex items-center justify-center gap-3 py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl shadow-emerald-100 transition-all disabled:opacity-20"
                >
-                 {isSeeding ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Play size={18} />}
-                 {isSeeding ? "Sincronizando..." : "Inicializar Datos Maestros (Seeding)"}
+                 {isSeeding ? <Activity className="animate-spin" size={18} /> : <Play size={18} />}
+                 {isSeeding ? "Sincronizando..." : "Ejecutar Seeding (Solo si ya creaste el esquema)"}
                </button>
+               {!connectionStats.schema && (
+                 <p className="text-center mt-4 text-[10px] text-red-500 font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                   <AlertTriangle size={12} /> Primero debes ejecutar el SQL en Supabase
+                 </p>
+               )}
             </div>
           </div>
 
-          <div className="space-y-6">
+          <div className="lg:col-span-4 space-y-6">
             <div className="bg-gradient-to-br from-indigo-600 to-blue-700 p-8 rounded-[2.5rem] text-white shadow-2xl shadow-blue-500/20">
               <Cloud size={40} className="mb-6 opacity-50" />
-              <h3 className="text-xl font-black mb-2 uppercase tracking-tight">Estado de Nube</h3>
-              <p className="text-blue-100 text-sm font-medium mb-6">El sistema detectará automáticamente cuando el esquema SQL haya sido aplicado.</p>
-              <div className="flex items-center gap-3 p-4 bg-white/10 rounded-2xl border border-white/10">
-                 <CheckCircle2 size={20} className="text-emerald-400" />
-                 <span className="text-[10px] font-black uppercase tracking-widest">Supabase Conectado</span>
+              <h3 className="text-xl font-black mb-6 uppercase tracking-tight leading-none">Checklist de Nube</h3>
+              
+              <div className="space-y-4">
+                <StatusItem label="Cliente Supabase" active={connectionStats.client} />
+                <StatusItem label="Esquema de Tablas" active={connectionStats.schema} />
+                <StatusItem label="Datos Maestros" active={connectionStats.seeding} />
               </div>
             </div>
 
             <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-200">
-               <h4 className="font-black text-slate-400 uppercase tracking-widest text-[10px] mb-4">Instrucciones</h4>
-               <ol className="space-y-4">
-                 {[
-                   "Crear un proyecto en Supabase.",
-                   "Copiar el SQL de la izquierda.",
-                   "Pegarlo en el 'SQL Editor' de Supabase y dar 'Run'.",
-                   "Hacer click en 'Inicializar Datos Maestros' arriba."
-                 ].map((step, idx) => (
-                   <li key={idx} className="flex gap-3 text-xs font-bold text-slate-600 leading-tight">
-                      <span className="text-blue-600">{idx + 1}.</span>
-                      {step}
-                   </li>
-                 ))}
-               </ol>
+               <h4 className="font-black text-slate-400 uppercase tracking-widest text-[10px] mb-4">Pasos de Configuración</h4>
+               <ul className="space-y-6">
+                 <li className="flex gap-4">
+                    <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-black text-xs shrink-0">1</div>
+                    <p className="text-xs font-bold text-slate-600 leading-snug">Crear proyecto en <span className="text-blue-600">supabase.com</span></p>
+                 </li>
+                 <li className="flex gap-4">
+                    <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-black text-xs shrink-0">2</div>
+                    <p className="text-xs font-bold text-slate-600 leading-snug">Ir a <span className="text-blue-600">SQL Editor</span>, pegar el código de la izquierda y dar click en <span className="bg-emerald-100 text-emerald-700 px-1 rounded font-black">Run</span>.</p>
+                 </li>
+                 <li className="flex gap-4">
+                    <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-black text-xs shrink-0">3</div>
+                    <p className="text-xs font-bold text-slate-600 leading-snug">Hacer click en <span className="text-emerald-600 uppercase">Seeding</span> aquí para cargar los productos.</p>
+                 </li>
+               </ul>
             </div>
           </div>
         </div>
@@ -256,12 +275,19 @@ CREATE TABLE IF NOT EXISTS account_movements (
           </div>
           <div className="text-center py-32">
              <History size={60} className="mx-auto mb-4 text-slate-200 opacity-20" />
-             <p className="text-slate-300 font-black uppercase tracking-[0.2em] text-sm">Próximamente: Historial de transacciones de base de datos</p>
+             <p className="text-slate-300 font-black uppercase tracking-[0.2em] text-sm">Historial de transacciones vacío</p>
           </div>
         </div>
       )}
     </div>
   );
 };
+
+const StatusItem: React.FC<{label: string, active: boolean}> = ({ label, active }) => (
+  <div className={`flex items-center justify-between p-4 rounded-2xl border ${active ? 'bg-white/10 border-white/10' : 'bg-black/10 border-white/5 opacity-50'}`}>
+    <span className="text-[10px] font-black uppercase tracking-widest">{label}</span>
+    {active ? <CheckCircle2 size={16} className="text-emerald-400" /> : <AlertTriangle size={16} className="text-amber-400" />}
+  </div>
+);
 
 export default AdminDashboard;

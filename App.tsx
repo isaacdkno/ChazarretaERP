@@ -16,7 +16,11 @@ import {
   CheckCircle2,
   LayoutDashboard,
   Box,
-  Github
+  Github,
+  AlertCircle,
+  RefreshCw,
+  // Added missing Database icon import
+  Database
 } from 'lucide-react';
 
 import { UserRole, Order, Customer, OrderStatus, GateEntry, AuditLog, Product } from './types';
@@ -37,81 +41,97 @@ const App: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [gateEntries, setGateEntries] = useState<GateEntry[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [isSynced, setIsSynced] = useState(true);
+  const [isSynced, setIsSynced] = useState(false);
+  const [dbReady, setDbReady] = useState<boolean | 'ERROR'>(false);
   const [loading, setLoading] = useState(true);
 
-  // EFECTO DE CARGA INICIAL DESDE SUPABASE
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        // 1. Clientes
-        const { data: custs } = await supabase.from('customers').select('*');
-        if (custs) {
-          setCustomers(custs.map(c => ({
-            id: c.id,
-            name: c.name,
-            groupId: '', 
-            priceListId: c.price_list_id,
-            balance: c.balance,
-            isBlocked: c.is_blocked
-          })));
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // 1. Verificar si la tabla existe (Test de conexión)
+      const { data: custs, error: custError } = await supabase.from('customers').select('*');
+      
+      if (custError) {
+        if (custError.code === '42P01') { // Tabla no existe
+          setDbReady(false);
+        } else {
+          setDbReady('ERROR');
         }
-
-        // 2. Productos y sus precios
-        const { data: prods } = await supabase.from('products').select('*');
-        const { data: prices } = await supabase.from('product_prices').select('*');
-        
-        if (prods) {
-          const formattedProducts = prods.map(p => {
-            const productPrices: {[id: string]: number} = {};
-            prices?.filter(pr => pr.product_id === p.id).forEach(pr => {
-              productPrices[pr.price_list_id] = pr.price;
-            });
-            return {
-              id: p.id,
-              name: p.name,
-              brand: p.brand as 'La Fornarina' | 'Villecco',
-              category: p.category,
-              bonusEnabled: p.bonus_enabled,
-              prices: productPrices
-            };
-          });
-          setProducts(formattedProducts);
-        }
-
-        // 3. Órdenes con items
-        const { data: ords } = await supabase
-          .from('orders')
-          .select('*, order_items(*)')
-          .order('created_at', { ascending: false });
-        
-        if (ords) {
-          const formattedOrders: Order[] = ords.map(o => ({
-            id: o.id,
-            customerId: o.customer_id,
-            customerName: o.customer_name || 'Desconocido',
-            status: o.status as OrderStatus,
-            totalAmount: o.total_amount,
-            createdAt: o.created_at,
-            signatureUrl: o.signature_url,
-            items: o.order_items.map((i: any) => ({
-              id: i.id,
-              productId: i.product_id,
-              quantity: i.quantity,
-              bonusQuantity: i.bonus_quantity,
-              unitPrice: i.unit_price
-            }))
-          }));
-          setOrders(formattedOrders);
-        }
-      } catch (error) {
-        console.error("Error fetching Supabase data:", error);
-      } finally {
+        setIsSynced(false);
         setLoading(false);
+        return;
       }
-    };
 
+      setDbReady(true);
+      if (custs) {
+        setCustomers(custs.map(c => ({
+          id: c.id,
+          name: c.name,
+          groupId: '', 
+          priceListId: c.price_list_id,
+          balance: c.balance,
+          isBlocked: c.is_blocked
+        })));
+      }
+
+      // 2. Productos y sus precios
+      const { data: prods } = await supabase.from('products').select('*');
+      const { data: prices } = await supabase.from('product_prices').select('*');
+      
+      if (prods) {
+        const formattedProducts = prods.map(p => {
+          const productPrices: {[id: string]: number} = {};
+          prices?.filter(pr => pr.product_id === p.id).forEach(pr => {
+            productPrices[pr.price_list_id] = pr.price;
+          });
+          return {
+            id: p.id,
+            name: p.name,
+            brand: p.brand as 'La Fornarina' | 'Villecco',
+            category: p.category,
+            bonusEnabled: p.bonus_enabled,
+            prices: productPrices
+          };
+        });
+        setProducts(formattedProducts);
+      }
+
+      // 3. Órdenes con items
+      const { data: ords } = await supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .order('created_at', { ascending: false });
+      
+      if (ords) {
+        const formattedOrders: Order[] = ords.map(o => ({
+          id: o.id,
+          customerId: o.customer_id,
+          customerName: o.customer_name || 'Desconocido',
+          status: o.status as OrderStatus,
+          totalAmount: o.total_amount,
+          createdAt: o.created_at,
+          signatureUrl: o.signature_url,
+          items: (o.order_items || []).map((i: any) => ({
+            id: i.id,
+            productId: i.product_id,
+            quantity: i.quantity,
+            bonusQuantity: i.bonus_quantity,
+            unitPrice: i.unit_price
+          }))
+        }));
+        setOrders(formattedOrders);
+      }
+      setIsSynced(true);
+    } catch (error) {
+      console.error("Error connecting to Supabase:", error);
+      setDbReady('ERROR');
+      setIsSynced(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, []);
 
@@ -136,6 +156,7 @@ const App: React.FC = () => {
         product_id: item.productId,
         quantity: item.quantity,
         bonus_quantity: item.bonusQuantity,
+        // Fixed: item.unit_price should be item.unitPrice as per OrderItem interface
         unit_price: item.unitPrice
       }));
 
@@ -259,7 +280,7 @@ const App: React.FC = () => {
                 <p className="text-xs font-bold text-white truncate">{currentUser.role}</p>
                 <div className="flex items-center gap-1.5">
                    <div className={`w-1.5 h-1.5 rounded-full ${isSynced ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></div>
-                   <p className="text-[9px] font-bold text-slate-500 uppercase">{isSynced ? 'Online' : 'Sincronizando...'}</p>
+                   <p className="text-[9px] font-bold text-slate-500 uppercase">{isSynced ? 'Conectado' : 'Sin Datos'}</p>
                 </div>
               </div>
             </div>
@@ -271,8 +292,30 @@ const App: React.FC = () => {
 
         <main className="flex-1 overflow-auto bg-[#f8fafc]">
           <div className="p-6 md:p-10 max-w-7xl mx-auto">
+            {!dbReady && dbReady !== 'ERROR' && (
+              <div className="mb-8 p-6 bg-amber-50 border border-amber-200 rounded-[2rem] flex flex-col md:flex-row items-center justify-between gap-6 animate-in slide-in-from-top-4">
+                <div className="flex items-center gap-4 text-amber-700">
+                  <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center shrink-0">
+                    <AlertCircle size={24} />
+                  </div>
+                  <div>
+                    <h3 className="font-black uppercase text-sm tracking-tight">Base de datos no inicializada</h3>
+                    <p className="text-xs font-medium">Es necesario configurar el esquema SQL en Supabase antes de operar.</p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={fetchData} className="px-6 py-2.5 bg-white border border-amber-200 text-amber-700 font-black text-[10px] uppercase rounded-xl hover:bg-amber-100 transition-all flex items-center gap-2">
+                    <RefreshCw size={14} /> Reintentar
+                  </button>
+                  {currentUser.role === UserRole.ADMIN && (
+                    <Link to="/audit" className="px-6 py-2.5 bg-amber-600 text-white font-black text-[10px] uppercase rounded-xl hover:bg-amber-700 transition-all">Configurar Ahora</Link>
+                  )}
+                </div>
+              </div>
+            )}
+
             <Routes>
-              <Route path="/" element={<HomeDashboard role={currentUser.role} orders={orders} customers={customers} isSynced={isSynced} />} />
+              <Route path="/" element={<HomeDashboard role={currentUser.role} orders={orders} customers={customers} isSynced={isSynced} dbReady={dbReady} />} />
               <Route path="/orders" element={<OrdersTable orders={orders} />} />
               <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={products} />} />
               <Route path="/gate" element={<GateView gateEntries={gateEntries} setGateEntries={setGateEntries} customers={customers} products={products} />} />
@@ -280,7 +323,7 @@ const App: React.FC = () => {
               <Route path="/factory" element={<FactoryView orders={orders} />} />
               <Route path="/dispatch" element={<DispatchView orders={orders} updateOrder={updateOrder} />} />
               <Route path="/collection" element={<CollectionView orders={orders} updateOrder={updateOrder} customers={customers} setCustomers={setCustomers} />} />
-              <Route path="/audit" element={<AdminDashboard logs={auditLogs} />} />
+              <Route path="/audit" element={<AdminDashboard logs={auditLogs} onRefresh={fetchData} dbReady={dbReady} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </div>
@@ -301,8 +344,7 @@ const SidebarLink: React.FC<{to: string, icon: React.ReactNode, label: string}> 
   );
 };
 
-const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Customer[], isSynced: boolean}> = ({ role, orders, customers, isSynced }) => {
-  const customer = customers[0] || { name: 'Empresa', balance: 0, id: '' };
+const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Customer[], isSynced: boolean, dbReady: boolean | 'ERROR'}> = ({ role, orders, customers, isSynced, dbReady }) => {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -315,7 +357,7 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatsCard title="Saldo Global" value={`$${customers.reduce((acc, c) => acc + c.balance, 0).toLocaleString()}`} subtitle="Cuentas Corrientes" icon={<BadgeDollarSign size={24}/>} color="blue" />
         <StatsCard title="Órdenes Activas" value={orders.length.toString()} subtitle="Cola de producción" icon={<ClipboardList size={24}/>} color="purple" />
-        <StatsCard title="Servidor Cloud" value={isSynced ? "ACTIVO" : "ERROR"} subtitle="Sync Supabase" icon={<CheckCircle2 size={24}/>} color={isSynced ? "emerald" : "red"} />
+        <StatsCard title="Estado Cloud" value={dbReady === true ? "ACTIVO" : (dbReady === false ? "SIN ESQUEMA" : "SIN CONEXIÓN")} subtitle="Sync Supabase" icon={<CheckCircle2 size={24}/>} color={dbReady === true ? "emerald" : "red"} />
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
@@ -340,7 +382,14 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
               </div>
             </div>
           ))}
-          {orders.length === 0 && <div className="p-20 text-center font-black text-slate-300 uppercase tracking-widest text-xs">Sin datos en Supabase. Ejecuta el Seeding en Admin.</div>}
+          {orders.length === 0 && (
+            <div className="p-24 text-center">
+              <div className="bg-slate-50 w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-slate-200">
+                <Database size={40} />
+              </div>
+              <p className="text-slate-300 font-black uppercase tracking-widest text-xs">Esperando sincronización de datos...</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -350,7 +399,7 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
 const StatsCard: React.FC<{title: string, value: string, subtitle: string, icon: React.ReactNode, color: string}> = ({ title, value, subtitle, icon, color }) => {
   const colors: {[key: string]: string} = { blue: 'text-blue-600 bg-blue-50', purple: 'text-purple-600 bg-purple-50', emerald: 'text-emerald-600 bg-emerald-50', red: 'text-red-600 bg-red-50' };
   return (
-    <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+    <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm transition-all hover:scale-[1.02]">
       <div className={`w-14 h-14 ${colors[color]} rounded-2xl flex items-center justify-center mb-6`}>{icon}</div>
       <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">{title}</p>
       <h3 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">{value}</h3>
