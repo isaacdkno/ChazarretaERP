@@ -1,8 +1,10 @@
 
--- ERP CHAZARRETA v1.0 - Esquema PostgreSQL Completo
+-- ERP CHAZARRETA v1.0 - Esquema PostgreSQL + Datos Maestros
 -- Copiar y ejecutar en Supabase SQL Editor
 
--- 1. Limpiar estructura previa
+-- ==========================================
+-- 1. LIMPIEZA DE ESTRUCTURA PREVIA
+-- ==========================================
 DROP TABLE IF EXISTS order_items CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
 DROP TABLE IF EXISTS product_prices CASCADE;
@@ -12,7 +14,9 @@ DROP TABLE IF EXISTS price_lists CASCADE;
 DROP TABLE IF EXISTS account_movements CASCADE;
 DROP TABLE IF EXISTS gate_entries CASCADE;
 
--- 2. Definición de Tablas Maestras
+-- ==========================================
+-- 2. DEFINICIÓN DE TABLAS
+-- ==========================================
 CREATE TABLE price_lists (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -48,10 +52,9 @@ CREATE TABLE customers (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 3. Definición de Tablas Transaccionales
 CREATE TABLE orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    customer_id TEXT REFERENCES customers(id),
+    customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
     customer_name TEXT,
     status TEXT DEFAULT 'PENDING',
     total_amount DECIMAL(12,2) DEFAULT 0,
@@ -68,7 +71,6 @@ CREATE TABLE order_items (
     unit_price DECIMAL(12,2) NOT NULL
 );
 
--- 4. Soporte Logístico y Financiero
 CREATE TABLE gate_entries (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     customer_id TEXT REFERENCES customers(id),
@@ -81,8 +83,38 @@ CREATE TABLE gate_entries (
 CREATE TABLE account_movements (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     customer_id TEXT REFERENCES customers(id),
-    type TEXT, -- 'DEBIT' (deuda) o 'CREDIT' (pago)
+    type TEXT,
     amount DECIMAL(12,2),
     description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- ==========================================
+-- 3. CARGA DE DATOS MAESTROS (SEEDING)
+-- ==========================================
+
+-- Listas de Precios
+INSERT INTO price_lists (id, name, description) VALUES
+('l1', 'Distribuidores', 'Precio para canales de distribución externos'),
+('l2', 'Supermercados', 'Grandes superficies y cadenas'),
+('l3', 'Sucursales', 'Venta directa en locales propios');
+
+-- Productos
+INSERT INTO products (id, name, brand, category, bonus_enabled) VALUES
+('p1', 'Pan de Molde Blanco', 'La Fornarina', 'Panificados', true),
+('p2', 'Pan de Molde Salvado', 'La Fornarina', 'Panificados', true),
+('p3', 'Grisines Tradicionales', 'Villecco', 'Snacks', false),
+('p4', 'Pepas de Membrillo', 'Villecco', 'Dulces', true);
+
+-- Precios por Producto y Lista
+INSERT INTO product_prices (product_id, price_list_id, price) VALUES
+('p1', 'l1', 1080), ('p1', 'l2', 1150), ('p1', 'l3', 1200),
+('p2', 'l1', 1215), ('p2', 'l2', 1280), ('p2', 'l3', 1350),
+('p3', 'l1', 765),  ('p3', 'l2', 810),  ('p3', 'l3', 850),
+('p4', 'l1', 990),  ('p4', 'l2', 1050), ('p4', 'l3', 1100);
+
+-- Clientes Iniciales
+INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES
+('c1', 'Distribuidora Norte', 'l1', 45000, false),
+('c2', 'Sucursal Centro', 'l3', 0, false),
+('c3', 'Coto / Carrefour', 'l2', 120000, false);
