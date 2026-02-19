@@ -14,15 +14,13 @@ import {
   ChevronRight,
   Plus,
   CheckCircle2,
-  BarChart3,
-  Wifi,
-  Github,
   LayoutDashboard,
-  Box
+  Box,
+  Github
 } from 'lucide-react';
 
-import { UserRole, Order, Customer, OrderStatus, GateEntry, AuditLog } from './types';
-import { MOCK_PRODUCTS, MOCK_CUSTOMERS } from './constants';
+import { UserRole, Order, Customer, OrderStatus, GateEntry, AuditLog, Product } from './types';
+import { supabase } from './supabase';
 
 import DistributorView from './components/DistributorView';
 import GateView from './components/GateView';
@@ -35,22 +33,129 @@ import AdminDashboard from './components/AdminDashboard';
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<{name: string, role: UserRole} | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>(MOCK_CUSTOMERS);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [gateEntries, setGateEntries] = useState<GateEntry[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [isSynced, setIsSynced] = useState(true);
+  const [loading, setLoading] = useState(true);
 
-  const addOrder = (order: Order) => {
-    setOrders(prev => [order, ...prev]);
+  // EFECTO DE CARGA INICIAL DESDE SUPABASE
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        // Cargar Clientes
+        const { data: custs } = await supabase.from('customers').select('*');
+        if (custs) setCustomers(custs);
+
+        // Cargar Productos con sus precios
+        const { data: prods } = await supabase.from('products').select('*');
+        if (prods) setProducts(prods);
+
+        // Cargar Órdenes con items
+        const { data: ords } = await supabase
+          .from('orders')
+          .select('*, order_items(*)')
+          .order('created_at', { ascending: false });
+        
+        if (ords) {
+          const formattedOrders: Order[] = ords.map(o => ({
+            id: o.id,
+            customerId: o.customer_id,
+            customerName: o.customer_name || 'Desconocido', // Supabase debería tener este campo o hacer join
+            status: o.status as OrderStatus,
+            totalAmount: o.total_amount,
+            createdAt: o.created_at,
+            signatureUrl: o.signature_url,
+            items: o.order_items.map((i: any) => ({
+              id: i.id,
+              productId: i.product_id,
+              quantity: i.quantity,
+              bonusQuantity: i.bonus_quantity,
+              unitPrice: i.unit_price
+            }))
+          }));
+          setOrders(formattedOrders);
+        }
+      } catch (error) {
+        console.error("Error fetching Supabase data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const addOrder = async (order: Order) => {
     setIsSynced(false);
-    setTimeout(() => setIsSynced(true), 1500);
+    try {
+      // 1. Insertar orden principal
+      const { data: newOrder, error: orderError } = await supabase
+        .from('orders')
+        .insert([{
+          customer_id: order.customerId,
+          customer_name: order.customerName,
+          status: order.status,
+          total_amount: order.totalAmount,
+          created_at: order.createdAt
+        }])
+        .select()
+        .single();
+
+      if (orderError) throw orderError;
+
+      // 2. Insertar items
+      const itemsToInsert = order.items.map(item => ({
+        order_id: newOrder.id,
+        product_id: item.productId,
+        quantity: item.quantity,
+        bonus_quantity: item.bonusQuantity,
+        unit_price: item.unitPrice
+      }));
+
+      const { error: itemsError } = await supabase.from('order_items').insert(itemsToInsert);
+      if (itemsError) throw itemsError;
+
+      // 3. Actualizar estado local
+      setOrders(prev => [{ ...order, id: newOrder.id }, ...prev]);
+      setIsSynced(true);
+    } catch (err) {
+      console.error("Error saving order:", err);
+      alert("Error al guardar en la nube. Se mantiene en local temporalmente.");
+    }
   };
 
-  const updateOrder = (updatedOrder: Order) => {
-    setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+  const updateOrder = async (updatedOrder: Order) => {
     setIsSynced(false);
-    setTimeout(() => setIsSynced(true), 1500);
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({
+          status: updatedOrder.status,
+          signature_url: updatedOrder.signatureUrl,
+          total_amount: updatedOrder.totalAmount
+        })
+        .eq('id', updatedOrder.id);
+
+      if (error) throw error;
+
+      setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+      setIsSynced(true);
+    } catch (err) {
+      console.error("Error updating order:", err);
+    }
   };
+
+  if (loading && !currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-10">
+        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+        <p className="font-black uppercase tracking-[0.3em] text-sm animate-pulse">Sincronizando con Supabase...</p>
+      </div>
+    );
+  }
 
   // Pantalla de Login / Selección de Rol
   if (!currentUser) {
@@ -79,7 +184,7 @@ const App: React.FC = () => {
                 key={item.role}
                 onClick={() => {
                   setCurrentUser({ name: 'Operador Chazarreta', role: item.role });
-                  window.location.hash = '#/'; // Forzar reinicio a la raíz al loguear
+                  window.location.hash = '#/'; 
                 }}
                 className="flex items-center p-5 border border-slate-100 rounded-3xl hover:bg-white hover:shadow-xl hover:border-blue-200 transition-all group text-left"
               >
@@ -127,7 +232,6 @@ const App: React.FC = () => {
             
             <p className="px-4 py-2 mt-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Tu Módulo</p>
             
-            {/* Links condicionales por rol para que nunca queden "atrapados" */}
             {currentUser.role === UserRole.DISTRIBUTOR && (
               <SidebarLink to="/new-order" icon={<Plus size={20} />} label="Cargar Pedido" />
             )}
@@ -178,14 +282,13 @@ const App: React.FC = () => {
           </div>
         </nav>
 
-        {/* Main Content Area */}
         <main className="flex-1 overflow-auto bg-[#f8fafc]">
           <div className="p-6 md:p-10 max-w-7xl mx-auto">
             <Routes>
               <Route path="/" element={<HomeDashboard role={currentUser.role} orders={orders} customers={customers} isSynced={isSynced} />} />
               <Route path="/orders" element={<OrdersTable orders={orders} />} />
               
-              <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={MOCK_PRODUCTS} />} />
+              <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={products} />} />
               <Route path="/gate" element={<GateView gateEntries={gateEntries} setGateEntries={setGateEntries} />} />
               <Route path="/center" element={<OrderCenterView orders={orders} updateOrder={updateOrder} addOrder={addOrder} />} />
               <Route path="/factory" element={<FactoryView orders={orders} />} />
@@ -221,7 +324,6 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Redirección inteligente al entrar: te lleva a tu módulo principal solo si estás en la raíz
   useEffect(() => {
     if (location.pathname === '/') {
       const paths = {
@@ -231,7 +333,7 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
         [UserRole.DISPATCH]: '/dispatch',
         [UserRole.COLLECTION]: '/collection',
         [UserRole.ADMIN]: '/audit',
-        [UserRole.DISTRIBUTOR]: '/', // El distribuidor se queda en el dashboard
+        [UserRole.DISTRIBUTOR]: '/', 
       };
       
       const target = paths[role];
@@ -241,7 +343,7 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
     }
   }, [role, navigate, location]);
 
-  const customer = customers[0];
+  const customer = customers[0] || { name: 'Cargando...', balance: 0, id: '' };
   const myOrders = orders.filter(o => o.customerId === customer.id);
 
   return (
@@ -260,8 +362,8 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatsCard title="Saldo de Cuenta" value={`$${customer.balance.toLocaleString()}`} subtitle="Actualizado ahora" icon={<BadgeDollarSign size={24}/>} color="blue" />
-        <StatsCard title="Pedidos Activos" value={orders.length.toString()} subtitle="Total del día" icon={<ClipboardList size={24}/>} color="purple" />
+        <StatsCard title="Saldo de Cuenta" value={`$${customer.balance.toLocaleString()}`} subtitle="Actualizado Supabase" icon={<BadgeDollarSign size={24}/>} color="blue" />
+        <StatsCard title="Pedidos Activos" value={orders.length.toString()} subtitle="Total histórico" icon={<ClipboardList size={24}/>} color="purple" />
         <StatsCard title="Estado Sistema" value={isSynced ? "Operativo" : "Offline"} subtitle="Conexión Supabase" icon={<CheckCircle2 size={24}/>} color={isSynced ? "emerald" : "red"} />
       </div>
 
@@ -277,7 +379,7 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
                   <FileText size={22} />
                 </div>
                 <div>
-                  <p className="font-bold text-slate-800">#ORD-{order.id.substr(0, 6).toUpperCase()}</p>
+                  <p className="font-bold text-slate-800">#ORD-{order.id.toString().substr(0, 6).toUpperCase()}</p>
                   <p className="text-xs text-slate-400 font-bold">{new Date(order.createdAt).toLocaleDateString()}</p>
                 </div>
               </div>
@@ -352,7 +454,7 @@ const OrdersTable: React.FC<{orders: Order[]}> = ({ orders }) => (
         <tbody className="divide-y divide-slate-50">
           {orders.map(order => (
             <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
-              <td className="px-8 py-5 font-mono text-xs font-bold text-slate-400">#{order.id.substr(0, 8)}</td>
+              <td className="px-8 py-5 font-mono text-xs font-bold text-slate-400">#{order.id.toString().substr(0, 8)}</td>
               <td className="px-8 py-5 font-black text-slate-800 uppercase tracking-tight">{order.customerName}</td>
               <td className="px-8 py-5 font-black text-slate-900">${order.totalAmount.toLocaleString()}</td>
               <td className="px-8 py-5"><OrderStatusBadge status={order.status} /></td>
