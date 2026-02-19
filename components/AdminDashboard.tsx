@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Database, History, Terminal, Cloud, CheckCircle2, Copy, Play, AlertTriangle, Search, Activity, Server, Key, Link as LinkIcon, RefreshCw, Trash2, ExternalLink } from 'lucide-react';
+import { ShieldCheck, Database, History, Terminal, Cloud, CheckCircle2, Copy, Play, AlertTriangle, Search, Activity, Server, Key, Link as LinkIcon, RefreshCw, Trash2, ExternalLink, Info, ShieldAlert } from 'lucide-react';
 import { AuditLog, Order } from '../types';
 import { supabase, saveSupabaseConfig, clearSupabaseConfig, isSupabaseConfigured } from '../supabase';
 import { MOCK_PRODUCTS, MOCK_CUSTOMERS, MOCK_PRICE_LISTS } from '../constants';
@@ -166,6 +166,30 @@ INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1
       {activeTab === 'DATABASE' ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-8 space-y-6">
+            
+            {/* GUIA DE PERSISTENCIA */}
+            <div className="bg-blue-600 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-blue-200 relative overflow-hidden">
+               <div className="relative z-10">
+                 <h3 className="text-xl font-black uppercase tracking-tight mb-2 flex items-center gap-2">
+                   <ShieldCheck size={24} /> ¿Cómo dejar las llaves fijas?
+                 </h3>
+                 <p className="text-blue-100 text-xs font-medium leading-relaxed mb-6 max-w-xl">
+                   Para no tener que pegar las llaves cada vez que recargas, puedes configurar <b>Variables de Entorno</b> en tu plataforma de hosting (Vercel, GitHub, etc.) con los nombres:
+                 </p>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="bg-white/10 p-4 rounded-2xl border border-white/20">
+                       <p className="text-[10px] font-black uppercase tracking-widest text-blue-200 mb-1">Nombre Variable 1</p>
+                       <code className="text-sm font-black">SUPABASE_URL</code>
+                    </div>
+                    <div className="bg-white/10 p-4 rounded-2xl border border-white/20">
+                       <p className="text-[10px] font-black uppercase tracking-widest text-blue-200 mb-1">Nombre Variable 2</p>
+                       <code className="text-sm font-black">SUPABASE_ANON_KEY</code>
+                    </div>
+                 </div>
+               </div>
+               <Info className="absolute -bottom-4 -right-4 w-40 h-40 text-white/5 rotate-12" />
+            </div>
+
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/50">
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-start gap-4">
@@ -173,8 +197,8 @@ INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1
                     <Key size={24} />
                   </div>
                   <div>
-                    <h3 className="text-slate-800 font-black text-lg uppercase tracking-tight leading-none mb-2">1. Conexión Cloud</h3>
-                    <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Credenciales Supabase</p>
+                    <h3 className="text-slate-800 font-black text-lg uppercase tracking-tight leading-none mb-2">1. Conexión Rápida (Local)</h3>
+                    <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Se guarda en este navegador</p>
                   </div>
                 </div>
                 {connectionStats.client && <CheckCircle2 className="text-emerald-500" size={24} />}
@@ -184,16 +208,16 @@ INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Project URL</label>
-                    <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none" value={configUrl} onChange={e => setConfigUrl(e.target.value)} />
+                    <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10" value={configUrl} onChange={e => setConfigUrl(e.target.value)} placeholder="https://xyz.supabase.co" />
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Anon Key</label>
-                    <input type="password" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none" value={configKey} onChange={e => setConfigKey(e.target.value)} />
+                    <input type="password" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10" value={configKey} onChange={e => setConfigKey(e.target.value)} placeholder="eyJhbGciOiJIUzI1NiI..." />
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 flex items-center justify-center gap-2">
-                    <RefreshCw size={16} /> Guardar Credenciales
+                  <button type="submit" className="flex-1 py-4 bg-slate-900 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl hover:bg-slate-800 transition-all shadow-xl flex items-center justify-center gap-2">
+                    <RefreshCw size={16} /> Aplicar y Guardar
                   </button>
                   <button type="button" onClick={clearSupabaseConfig} className="p-4 bg-red-50 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all border border-red-100">
                     <Trash2 size={20} />
@@ -209,13 +233,13 @@ INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1
                     <Database size={24} />
                   </div>
                   <div>
-                    <h3 className="text-white font-black text-lg uppercase tracking-tight">2. Script SQL Completo</h3>
-                    <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">Incluye Tablas + Datos Maestros</p>
+                    <h3 className="text-white font-black text-lg uppercase tracking-tight">2. Script de Datos Maestros</h3>
+                    <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">Usa esto si la carga por API falla</p>
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <button onClick={handleRefreshConnection} disabled={isChecking} className="bg-white/5 hover:bg-white/10 px-6 py-2.5 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-white border border-white/10">
-                    <RefreshCw className={isChecking ? 'animate-spin' : ''} size={16} /> Re-comprobar
+                    <RefreshCw className={isChecking ? 'animate-spin' : ''} size={16} /> Sincronizar UI
                   </button>
                   <button onClick={() => copyToClipboard(fullSqlScript)} className="bg-blue-600 hover:bg-blue-500 px-6 py-2.5 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-white shadow-xl shadow-blue-500/20">
                     <Copy size={16} /> Copiar SQL
@@ -225,25 +249,6 @@ INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1
               <pre className="bg-black/40 p-6 rounded-2xl font-mono text-[10px] overflow-x-auto border border-white/5 leading-relaxed text-blue-300 custom-scrollbar max-h-[350px]">
                 {fullSqlScript}
               </pre>
-            </div>
-
-            <div className={`bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/50 transition-all ${!connectionStats.schema ? 'opacity-20 pointer-events-none scale-95' : 'opacity-100'}`}>
-               <div className="flex items-center justify-between mb-8">
-                  <div className="flex items-start gap-4">
-                    <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
-                       <Server size={24} />
-                    </div>
-                    <div>
-                       <h3 className="text-slate-800 font-black text-lg uppercase tracking-tight mb-2">3. Sembrado Manual</h3>
-                       <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Sincronización por API</p>
-                    </div>
-                  </div>
-                  {orders.length > 0 && <span className="px-4 py-1.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-black uppercase tracking-widest">Sistema Listo</span>}
-               </div>
-               <button onClick={seedDatabase} disabled={isSeeding} className="w-full flex items-center justify-center gap-3 py-5 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl shadow-emerald-100 transition-all disabled:opacity-50">
-                 {isSeeding ? <Activity className="animate-spin" size={20} /> : <Play size={20} />}
-                 {isSeeding ? "Sincronizando..." : "Ejecutar Inicialización vía API"}
-               </button>
             </div>
           </div>
 
@@ -260,9 +265,14 @@ INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1
                 Abrir SQL Editor <ExternalLink size={14} />
               </a>
             </div>
+            
             <div className="bg-amber-50 p-6 rounded-3xl border border-amber-200">
-               <h4 className="font-black text-amber-800 uppercase tracking-tight text-xs mb-2">Atención</h4>
-               <p className="text-[10px] text-amber-700 font-medium leading-relaxed">Si el Paso 3 no funciona desde aquí, el botón "Copiar SQL" del Paso 2 ahora incluye todos los datos maestros para que los inyectes directamente en Supabase.</p>
+               <h4 className="font-black text-amber-800 uppercase tracking-tight text-xs mb-2 flex items-center gap-2">
+                 <ShieldAlert size={14} /> Seguridad
+               </h4>
+               <p className="text-[10px] text-amber-700 font-medium leading-relaxed">
+                 Nunca compartas tu <b>Service Role Key</b>. Usa siempre la <b>Anon Key</b> para el frontend. Si necesitas que el sistema sea accesible por varios usuarios sin configurar nada, pídeme "Hardcodear las llaves en el código".
+               </p>
             </div>
           </div>
         </div>

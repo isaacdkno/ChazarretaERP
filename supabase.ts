@@ -1,42 +1,48 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Intentamos obtener de process.env o del localStorage del navegador
+/**
+ * CONFIGURACIÓN DE SUPABASE
+ * -------------------------
+ * Opción A (Recomendada): Configura las variables de entorno en tu plataforma de hosting (Vercel/Netlify).
+ * Opción B (Rápida): Pega tus credenciales en las constantes 'HARDCODED_URL' y 'HARDCODED_KEY' abajo.
+ */
+
+const HARDCODED_URL = ''; // Pega aquí tu Project URL si quieres que sea permanente
+const HARDCODED_KEY = ''; // Pega aquí tu Anon Key si quieres que sea permanente
+
 const getSupabaseConfig = () => {
-  // Use optional chaining or check for process to be safe in all environments
-  const envUrl = typeof process !== 'undefined' ? (process.env as any).SUPABASE_URL : undefined;
-  const envKey = typeof process !== 'undefined' ? (process.env as any).SUPABASE_ANON_KEY : undefined;
+  // 1. Intentar obtener de variables de entorno (Vite / Proceso estándar)
+  const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || (process.env as any).SUPABASE_URL;
+  const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || (process.env as any).SUPABASE_ANON_KEY;
   
+  // 2. Intentar obtener del almacenamiento local del navegador
   const localUrl = localStorage.getItem('supabase_url');
   const localKey = localStorage.getItem('supabase_key');
 
-  const url = envUrl || localUrl || '';
-  const key = envKey || localKey || '';
+  // Prioridad: Hardcoded > Env Vars > LocalStorage
+  const url = HARDCODED_URL || envUrl || localUrl || '';
+  const key = HARDCODED_KEY || envKey || localKey || '';
 
   return { url, key };
 };
 
 const config = getSupabaseConfig();
 
-/**
- * Para evitar el error "supabaseUrl is required" al iniciar la app sin configuración,
- * usamos una URL de marcador de posición si los valores están vacíos.
- * La app detectará que no está conectada y pedirá los datos al usuario en AdminDashboard.
- */
+// Para evitar errores de inicialización, usamos placeholders si no hay config
 const IS_CONFIGURED = config.url !== '' && config.key !== '';
 const FINAL_URL = IS_CONFIGURED ? config.url : 'https://placeholder.supabase.co';
 const FINAL_KEY = IS_CONFIGURED ? config.key : 'placeholder';
 
 export const supabase = createClient(FINAL_URL, FINAL_KEY);
 
-// Helper para saber si la configuración es real
 export const isSupabaseConfigured = () => IS_CONFIGURED;
 
-// Helper para guardar configuración manualmente desde la UI
 export const saveSupabaseConfig = (url: string, key: string) => {
   localStorage.setItem('supabase_url', url);
   localStorage.setItem('supabase_key', key);
-  window.location.reload(); // Recargamos para re-instanciar el cliente
+  // Recargamos para que el cliente tome los nuevos valores
+  window.location.reload();
 };
 
 export const clearSupabaseConfig = () => {
