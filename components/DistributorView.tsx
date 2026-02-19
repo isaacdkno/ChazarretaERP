@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ShoppingCart, Plus, Minus, Search, Trash2, CheckCircle2, Percent, Zap, Package } from 'lucide-center';
+import { ShoppingCart, Plus, Minus, Search, Trash2, CheckCircle2, Percent, Zap, Package, Box } from 'lucide-react';
 import { Product, Customer, Order, OrderStatus, OrderItem } from '../types';
 
 interface Props {
@@ -14,7 +14,7 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products }) => 
   const [search, setSearch] = useState('');
   const [success, setSuccess] = useState(false);
 
-  // SAFE DEFAULTS INTERNOS (Solo si el admin olvida configurar pero activa el switch)
+  // SAFE DEFAULTS INTERNOS
   const FALLBACK_THRESHOLD = 20;
   const FALLBACK_PERCENTAGE = 10;
 
@@ -47,12 +47,12 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products }) => 
       
       let bonusQty = 0;
       if (product.bonusEnabled) {
-        // Usa config específica, si no existe usa el fallback interno
         const threshold = product.bonusThreshold || FALLBACK_THRESHOLD;
         const percentage = product.bonusPercentage || FALLBACK_PERCENTAGE;
         
         if (qty >= threshold) {
-          bonusQty = Math.floor(qty * (percentage / 100));
+          // CAMBIO CLAVE: Math.ceil para redondear a favor del cliente
+          bonusQty = Math.ceil(qty * (percentage / 100));
         }
       }
       
@@ -91,7 +91,7 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products }) => 
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
       {/* Product Selection */}
       <div className="lg:col-span-2 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -113,8 +113,6 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products }) => 
             const customer = customers[0];
             const priceListId = customer?.priceListId || 'l1';
             const unitPrice = product.prices[priceListId] || 0;
-            
-            // Lógica de visualización para el catálogo
             const threshold = product.bonusThreshold || FALLBACK_THRESHOLD;
             const percentage = product.bonusPercentage || FALLBACK_PERCENTAGE;
             
@@ -126,7 +124,7 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products }) => 
                       {product.brand}
                     </span>
                     {product.bonusEnabled && (
-                      <div className="flex items-center gap-1 text-emerald-600 animate-pulse">
+                      <div className="flex items-center gap-1 text-emerald-600">
                          <Zap size={14} className="fill-emerald-600" />
                          <span className="text-[10px] font-black uppercase tracking-tighter">Oferta Activa</span>
                       </div>
@@ -164,7 +162,6 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products }) => 
         </div>
       </div>
 
-      {/* Cart Summary */}
       <div className="lg:col-span-1">
         <div className="bg-slate-900 text-white rounded-[2.5rem] shadow-2xl p-8 sticky top-8 border border-white/10">
           <div className="flex items-center space-x-3 mb-8">
@@ -177,7 +174,7 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products }) => 
           <div className="space-y-6 mb-10 max-h-[40vh] overflow-auto pr-2 custom-scrollbar">
             {items.length === 0 ? (
               <div className="text-center py-12">
-                 <BoxIcon size={48} className="mx-auto mb-4 opacity-10" />
+                 <Box size={48} className="mx-auto mb-4 opacity-10" />
                  <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Carrito vacío</p>
               </div>
             ) : items.map(item => {
@@ -228,9 +225,5 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products }) => 
     </div>
   );
 };
-
-const BoxIcon = ({size, className}: {size: number, className?: string}) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path></svg>
-);
 
 export default DistributorView;
