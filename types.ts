@@ -29,8 +29,8 @@ export interface Product {
   brand: 'La Fornarina' | 'Villecco';
   category: string;
   bonusEnabled: boolean;
-  bonusThreshold?: number; // Opcional: sobreescribe el global
-  bonusPercentage?: number;  // Opcional: sobreescribe el global
+  bonusThreshold?: number; 
+  bonusPercentage?: number;
   prices: { [priceListId: string]: number };
 }
 
@@ -69,14 +69,21 @@ export interface Customer {
   isBlocked: boolean;
 }
 
+export interface GateEntryItem {
+  id: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  reason: string;
+}
+
 export interface GateEntry {
   id: string;
   customerId: string;
   customerName: string;
-  productName: string;
-  quantity: number;
-  reason: string;
+  items: GateEntryItem[];
   status: 'PENDING' | 'CONVERTED';
+  createdAt: string;
 }
 
 export interface AuditLog {
