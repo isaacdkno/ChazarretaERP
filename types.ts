@@ -29,7 +29,9 @@ export interface Product {
   brand: 'La Fornarina' | 'Villecco';
   category: string;
   bonusEnabled: boolean;
-  prices: { [priceListId: string]: number }; // Precios por lista
+  bonusThreshold?: number; // Opcional: sobreescribe el global
+  bonusPercentage?: number;  // Opcional: sobreescribe el global
+  prices: { [priceListId: string]: number };
 }
 
 export interface PriceList {
@@ -62,7 +64,7 @@ export interface Customer {
   id: string;
   name: string;
   groupId: string;
-  priceListId: string; // Lista de precios asignada
+  priceListId: string;
   balance: number;
   isBlocked: boolean;
 }
