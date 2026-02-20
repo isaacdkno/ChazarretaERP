@@ -208,6 +208,14 @@ const App: React.FC = () => {
     return <Login onLogin={(user) => setCurrentUser(user)} />;
   }
 
+  const displayOrders = currentUser.role === UserRole.DISTRIBUTOR 
+    ? orders.filter(o => o.customerName.toLowerCase() === currentUser.name.toLowerCase())
+    : orders;
+
+  const displayCustomers = currentUser.role === UserRole.DISTRIBUTOR
+    ? customers.filter(c => c.name.toLowerCase() === currentUser.name.toLowerCase())
+    : customers;
+
   return (
     <HashRouter>
       <div className="min-h-screen flex flex-col md:flex-row bg-[#f8fafc]">
@@ -243,7 +251,7 @@ const App: React.FC = () => {
                 <UserCircle size={24} />
               </div>
               <div className="overflow-hidden">
-                <p className="text-xs font-bold text-white truncate">{currentUser.role}</p>
+                <p className="text-xs font-bold text-white truncate">{currentUser.name}</p>
                 <div className="flex items-center gap-1.5">
                    <div className={`w-1.5 h-1.5 rounded-full ${isSynced ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></div>
                    <p className="text-[9px] font-bold text-slate-500 uppercase">{isSynced ? 'Conectado' : 'Sin Datos'}</p>
@@ -281,15 +289,25 @@ const App: React.FC = () => {
             )}
 
             <Routes>
-              <Route path="/" element={<HomeDashboard role={currentUser.role} orders={orders} customers={customers} isSynced={isSynced} dbReady={dbReady} />} />
-              <Route path="/orders" element={<OrdersTable orders={orders} role={currentUser.role} />} />
-              <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={products} currentUser={currentUser} />} />
-              <Route path="/gate" element={<GateView gateEntries={gateEntries} setGateEntries={setGateEntries} customers={customers} products={products} />} />
-              <Route path="/center" element={<OrderCenterView orders={orders} updateOrder={updateOrder} addOrder={addOrder} products={products} customers={customers} />} />
-              <Route path="/factory" element={<FactoryView orders={orders} />} />
-              <Route path="/dispatch" element={<DispatchView orders={orders} updateOrder={updateOrder} />} />
-              <Route path="/collection" element={<CollectionView orders={orders} updateOrder={updateOrder} customers={customers} setCustomers={setCustomers} />} />
-              <Route path="/audit" element={<AdminDashboard logs={auditLogs} onRefresh={fetchData} dbReady={dbReady} orders={orders} />} />
+              <Route path="/" element={<HomeDashboard role={currentUser.role} orders={displayOrders} customers={displayCustomers} isSynced={isSynced} dbReady={dbReady} />} />
+              <Route path="/orders" element={<OrdersTable orders={displayOrders} role={currentUser.role} />} />
+              
+              {currentUser.role === UserRole.DISTRIBUTOR && (
+                <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={products} currentUser={currentUser} />} />
+              )}
+
+              {currentUser.role !== UserRole.DISTRIBUTOR && (
+                <>
+                  <Route path="/gate" element={<GateView gateEntries={gateEntries} setGateEntries={setGateEntries} customers={customers} products={products} />} />
+                  <Route path="/center" element={<OrderCenterView orders={orders} updateOrder={updateOrder} addOrder={addOrder} products={products} customers={customers} />} />
+                  <Route path="/factory" element={<FactoryView orders={orders} />} />
+                  <Route path="/dispatch" element={<DispatchView orders={orders} updateOrder={updateOrder} />} />
+                  <Route path="/collection" element={<CollectionView orders={orders} updateOrder={updateOrder} customers={customers} setCustomers={setCustomers} />} />
+                  {currentUser.role === UserRole.ADMIN && (
+                    <Route path="/audit" element={<AdminDashboard logs={auditLogs} onRefresh={fetchData} dbReady={dbReady} orders={orders} />} />
+                  )}
+                </>
+              )}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </div>
@@ -322,15 +340,21 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {role !== UserRole.FACTORY && role !== UserRole.DISPATCH && (
-          <StatsCard title="Saldo Global" value={`$${customers.reduce((acc, c) => acc + c.balance, 0).toLocaleString()}`} subtitle="Cuentas Corrientes" icon={<BadgeDollarSign size={24}/>} color="blue" />
+          <StatsCard 
+            title={role === UserRole.DISTRIBUTOR ? "Mi Saldo" : "Saldo Global"} 
+            value={`$${customers.reduce((acc, c) => acc + c.balance, 0).toLocaleString()}`} 
+            subtitle={role === UserRole.DISTRIBUTOR ? "Cuenta Corriente" : "Cuentas Corrientes"} 
+            icon={<BadgeDollarSign size={24}/>} 
+            color="blue" 
+          />
         )}
-        <StatsCard title="Órdenes Activas" value={orders.length.toString()} subtitle="Cola de producción" icon={<ClipboardList size={24}/>} color="purple" />
+        <StatsCard title={role === UserRole.DISTRIBUTOR ? "Mis Pedidos" : "Órdenes Activas"} value={orders.length.toString()} subtitle={role === UserRole.DISTRIBUTOR ? "Historial de carga" : "Cola de producción"} icon={<ClipboardList size={24}/>} color="purple" />
         <StatsCard title="Estado Cloud" value={dbReady === true ? "ACTIVO" : (dbReady === false ? "DESCONECTADO" : "ERROR")} subtitle="Sync Supabase" icon={<CheckCircle2 size={24}/>} color={dbReady === true ? "emerald" : (dbReady === false ? "amber" : "red")} />
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
         <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 font-black uppercase text-xs tracking-widest text-slate-800">
-          Últimos Movimientos Cloud
+          {role === UserRole.DISTRIBUTOR ? "Mis Últimos Movimientos" : "Últimos Movimientos Cloud"}
         </div>
         <div className="divide-y divide-slate-100">
           {orders.slice(0, 8).map(order => (
