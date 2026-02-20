@@ -80,7 +80,7 @@ const DispatchView: React.FC<Props> = ({ orders, updateOrder }) => {
                 <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-blue-100 text-blue-600 rounded-full">Listo para Carga</span>
               </div>
               <h3 className="font-bold text-slate-800 mb-1">{order.customerName}</h3>
-              <p className="text-xs text-slate-400 mb-4">{order.items.length} productos • ${order.totalAmount.toLocaleString()}</p>
+              <p className="text-xs text-slate-400 mb-4">{order.items.length} productos</p>
               <button className="w-full py-2 bg-slate-50 text-slate-600 rounded-lg text-sm font-bold hover:bg-slate-100 transition-colors">Abrir para Firma</button>
             </div>
           ))}

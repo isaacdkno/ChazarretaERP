@@ -282,7 +282,7 @@ const App: React.FC = () => {
 
             <Routes>
               <Route path="/" element={<HomeDashboard role={currentUser.role} orders={orders} customers={customers} isSynced={isSynced} dbReady={dbReady} />} />
-              <Route path="/orders" element={<OrdersTable orders={orders} />} />
+              <Route path="/orders" element={<OrdersTable orders={orders} role={currentUser.role} />} />
               <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={products} currentUser={currentUser} />} />
               <Route path="/gate" element={<GateView gateEntries={gateEntries} setGateEntries={setGateEntries} customers={customers} products={products} />} />
               <Route path="/center" element={<OrderCenterView orders={orders} updateOrder={updateOrder} addOrder={addOrder} products={products} customers={customers} />} />
@@ -321,7 +321,9 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatsCard title="Saldo Global" value={`$${customers.reduce((acc, c) => acc + c.balance, 0).toLocaleString()}`} subtitle="Cuentas Corrientes" icon={<BadgeDollarSign size={24}/>} color="blue" />
+        {role !== UserRole.FACTORY && role !== UserRole.DISPATCH && (
+          <StatsCard title="Saldo Global" value={`$${customers.reduce((acc, c) => acc + c.balance, 0).toLocaleString()}`} subtitle="Cuentas Corrientes" icon={<BadgeDollarSign size={24}/>} color="blue" />
+        )}
         <StatsCard title="Órdenes Activas" value={orders.length.toString()} subtitle="Cola de producción" icon={<ClipboardList size={24}/>} color="purple" />
         <StatsCard title="Estado Cloud" value={dbReady === true ? "ACTIVO" : (dbReady === false ? "DESCONECTADO" : "ERROR")} subtitle="Sync Supabase" icon={<CheckCircle2 size={24}/>} color={dbReady === true ? "emerald" : (dbReady === false ? "amber" : "red")} />
       </div>
@@ -343,7 +345,9 @@ const HomeDashboard: React.FC<{role: UserRole, orders: Order[], customers: Custo
                 </div>
               </div>
               <div className="flex items-center space-x-8">
-                <p className="font-black text-slate-900 tracking-tighter text-sm">${order.totalAmount.toLocaleString()}</p>
+                {role !== UserRole.FACTORY && role !== UserRole.DISPATCH && (
+                  <p className="font-black text-slate-900 tracking-tighter text-sm">${order.totalAmount.toLocaleString()}</p>
+                )}
                 <OrderStatusBadge status={order.status} />
               </div>
             </div>
@@ -379,33 +383,37 @@ const OrderStatusBadge: React.FC<{status: OrderStatus}> = ({ status }) => {
   return <span className={`px-4 py-1.5 rounded-xl text-[9px] font-black border tracking-widest ${styles[status]}`}>{status}</span>;
 };
 
-const OrdersTable: React.FC<{orders: Order[]}> = ({ orders }) => (
-  <div className="space-y-6 animate-in slide-in-from-bottom-4">
-    <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase tracking-tight">Registro General Cloud</h1>
-    <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden overflow-x-auto">
-      <table className="w-full text-left">
-        <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
-          <tr>
-            <th className="px-8 py-5">ID</th>
-            <th className="px-8 py-5">Cliente</th>
-            <th className="px-8 py-5">Importe</th>
-            <th className="px-8 py-5">Estado</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-50">
-          {orders.map(order => (
-            <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
-              <td className="px-8 py-5 font-mono text-[10px] font-bold text-slate-400">#{order.id.toString().substr(0, 8).toUpperCase()}</td>
-              <td className="px-8 py-5 font-black text-slate-800 uppercase text-xs">{order.customerName}</td>
-              <td className="px-8 py-5 font-black text-slate-900 tracking-tighter text-sm">${order.totalAmount.toLocaleString()}</td>
-              <td className="px-8 py-5"><OrderStatusBadge status={order.status} /></td>
+const OrdersTable: React.FC<{orders: Order[], role: UserRole}> = ({ orders, role }) => {
+  const showAmount = role !== UserRole.FACTORY && role !== UserRole.DISPATCH;
+  
+  return (
+    <div className="space-y-6 animate-in slide-in-from-bottom-4">
+      <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase tracking-tight">Registro General Cloud</h1>
+      <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden overflow-x-auto">
+        <table className="w-full text-left">
+          <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
+            <tr>
+              <th className="px-8 py-5">ID</th>
+              <th className="px-8 py-5">Cliente</th>
+              {showAmount && <th className="px-8 py-5">Importe</th>}
+              <th className="px-8 py-5">Estado</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {orders.map(order => (
+              <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
+                <td className="px-8 py-5 font-mono text-[10px] font-bold text-slate-400">#{order.id.toString().substr(0, 8).toUpperCase()}</td>
+                <td className="px-8 py-5 font-black text-slate-800 uppercase text-xs">{order.customerName}</td>
+                {showAmount && <td className="px-8 py-5 font-black text-slate-900 tracking-tighter text-sm">${order.totalAmount.toLocaleString()}</td>}
+                <td className="px-8 py-5"><OrderStatusBadge status={order.status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const Login: React.FC<{onLogin: (user: {name: string, role: UserRole, email: string}) => void}> = ({ onLogin }) => {
   const [isRegistering, setIsRegistering] = useState(false);
