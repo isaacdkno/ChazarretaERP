@@ -174,78 +174,75 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products, curre
             )}
           </div>
         </div>
-
-        {/* Quick Help */}
-        <div className="bg-blue-50 border border-blue-100 p-6 rounded-[2rem] flex items-start gap-4">
-          <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600 shrink-0">
-            <Zap size={20} />
-          </div>
-          <div>
-            <h4 className="font-black text-blue-900 uppercase text-xs tracking-widest mb-1">Bonificaciones Activas</h4>
-            <p className="text-blue-700 text-sm font-medium">Recuerde que los productos marcados con <span className="font-bold">Oferta</span> generan unidades sin cargo automáticamente al superar el umbral de 20 unidades.</p>
-          </div>
-        </div>
       </div>
 
       <div className="lg:col-span-1">
-        <div className="bg-slate-900 text-white rounded-[2.5rem] shadow-2xl p-8 sticky top-8 border border-white/10">
-          <div className="flex items-center space-x-3 mb-8">
-            <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center text-blue-400 shadow-inner">
-              <ShoppingCart size={24} />
+        <div className="bg-slate-900 text-white rounded-[2.5rem] shadow-2xl p-8 sticky top-8 border border-white/10 ring-4 ring-blue-500/20">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center space-x-3">
+              <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center text-blue-400 shadow-inner">
+                <ShoppingCart size={24} />
+              </div>
+              <h2 className="text-2xl font-black tracking-tight uppercase">Tu Comanda</h2>
             </div>
-            <h2 className="text-2xl font-black tracking-tight uppercase">Tu Comanda</h2>
+            {items.length > 0 && (
+              <span className="bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-full animate-pulse">
+                {items.length} ITEMS
+              </span>
+            )}
           </div>
 
-          <div className="space-y-6 mb-10 max-h-[50vh] overflow-auto pr-2 custom-scrollbar">
+          <div className="space-y-4 mb-10 max-h-[60vh] overflow-auto pr-2 custom-scrollbar">
             {items.length === 0 ? (
-              <div className="text-center py-12">
-                 <Box size={48} className="mx-auto mb-4 opacity-10" />
-                 <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Carrito vacío</p>
+              <div className="text-center py-20">
+                 <Box size={64} className="mx-auto mb-4 opacity-5" />
+                 <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Empiece a buscar productos para cargar su pedido</p>
               </div>
             ) : items.map(item => {
               const p = products.find(prod => prod.id === item.productId)!;
               return (
-                <div key={item.id} className="bg-white/5 p-4 rounded-2xl border border-white/5 space-y-3">
-                  <div className="flex justify-between items-start">
+                <div key={item.id} className="bg-white/5 p-5 rounded-3xl border border-white/5 hover:border-white/10 transition-all group">
+                  <div className="flex justify-between items-start mb-4">
                     <div className="flex-1">
-                      <p className="font-bold text-slate-100 text-sm uppercase leading-tight">{p.name}</p>
-                      <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-1">${item.unitPrice.toLocaleString()} / uni</p>
+                      <p className="font-black text-slate-100 text-sm uppercase leading-tight group-hover:text-blue-400 transition-colors">{p.name}</p>
+                      <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-1">${item.unitPrice.toLocaleString()} x unidad</p>
                     </div>
                     <button 
                       onClick={() => setQuantity(item.productId, 0)}
-                      className="text-slate-600 hover:text-red-400 transition-colors"
+                      className="p-2 text-slate-600 hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all"
                     >
                       <Trash2 size={16} />
                     </button>
                   </div>
                   
                   <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center bg-slate-800 rounded-xl p-1 border border-white/5">
+                    <div className="flex items-center bg-slate-800/50 rounded-2xl p-1.5 border border-white/5">
                       <button 
                         onClick={() => updateCart(item.productId, -1)}
-                        className="w-8 h-8 flex items-center justify-center hover:bg-white/5 rounded-lg text-slate-400 transition-all"
+                        className="w-9 h-9 flex items-center justify-center hover:bg-white/10 rounded-xl text-slate-400 transition-all"
                       >
-                        <Minus size={14} />
+                        <Minus size={16} />
                       </button>
                       <input 
                         type="number" 
                         value={item.quantity}
                         onChange={(e) => setQuantity(item.productId, parseInt(e.target.value) || 0)}
-                        className="w-12 bg-transparent text-center font-black text-white outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="w-14 bg-transparent text-center font-black text-white outline-none text-lg [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                       <button 
                         onClick={() => updateCart(item.productId, 1)}
-                        className="w-8 h-8 flex items-center justify-center hover:bg-white/5 rounded-lg text-slate-400 transition-all"
+                        className="w-9 h-9 flex items-center justify-center hover:bg-white/10 rounded-xl text-slate-400 transition-all"
                       >
-                        <Plus size={14} />
+                        <Plus size={16} />
                       </button>
                     </div>
                     <div className="text-right">
-                      <p className="font-black text-white font-mono text-lg">${(item.quantity * item.unitPrice).toLocaleString()}</p>
+                      <p className="font-black text-white font-mono text-xl tracking-tighter">${(item.quantity * item.unitPrice).toLocaleString()}</p>
                       {item.bonusQuantity > 0 && (
-                        <p className="text-emerald-400 font-black text-[10px] uppercase tracking-tighter flex items-center justify-end gap-1">
-                          <Zap size={10} className="fill-emerald-400" /> + {item.bonusQuantity} Bonif.
-                        </p>
+                        <div className="flex items-center justify-end gap-1 mt-1">
+                          <Zap size={10} className="fill-emerald-400 text-emerald-400" />
+                          <span className="text-emerald-400 font-black text-[10px] uppercase tracking-tighter">+{item.bonusQuantity} BONIF.</span>
+                        </div>
                       )}
                     </div>
                   </div>
