@@ -213,63 +213,74 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products, curre
             )}
           </div>
 
-          <div className="space-y-4 mb-10 max-h-[60vh] overflow-auto pr-2 custom-scrollbar">
+          <div className="mb-10 max-h-[60vh] overflow-auto pr-2 custom-scrollbar">
             {items.length === 0 ? (
               <div className="text-center py-20">
                  <Box size={64} className="mx-auto mb-4 opacity-5" />
                  <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Empiece a buscar productos para cargar su pedido</p>
               </div>
-            ) : items.map(item => {
-              const p = products.find(prod => prod.id === item.productId)!;
-              return (
-                <div key={item.id} className="bg-white/5 p-5 rounded-3xl border border-white/5 hover:border-white/10 transition-all group">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex-1">
-                      <p className="font-black text-slate-100 text-sm uppercase leading-tight group-hover:text-blue-400 transition-colors">{p.name}</p>
-                      <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-1">${item.unitPrice.toLocaleString()} x unidad</p>
-                    </div>
-                    <button 
-                      onClick={() => setQuantity(item.productId, 0)}
-                      className="p-2 text-slate-600 hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                  
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center bg-slate-800/50 rounded-2xl p-1.5 border border-white/5">
-                      <button 
-                        onClick={() => updateCart(item.productId, -1)}
-                        className="w-9 h-9 flex items-center justify-center hover:bg-white/10 rounded-xl text-slate-400 transition-all"
-                      >
-                        <Minus size={16} />
-                      </button>
-                      <input 
-                        type="number" 
-                        value={item.quantity}
-                        onChange={(e) => setQuantity(item.productId, parseInt(e.target.value) || 0)}
-                        className="w-14 bg-transparent text-center font-black text-white outline-none text-lg [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <button 
-                        onClick={() => updateCart(item.productId, 1)}
-                        className="w-9 h-9 flex items-center justify-center hover:bg-white/10 rounded-xl text-slate-400 transition-all"
-                      >
-                        <Plus size={16} />
-                      </button>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-black text-white font-mono text-xl tracking-tighter">${(item.quantity * item.unitPrice).toLocaleString()}</p>
-                      {item.bonusQuantity > 0 && (
-                        <div className="flex items-center justify-end gap-1 mt-1">
-                          <Zap size={10} className="fill-emerald-400 text-emerald-400" />
-                          <span className="text-emerald-400 font-black text-[10px] uppercase tracking-tighter">+{item.bonusQuantity} BONIF.</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+            ) : (
+              <div className="w-full">
+                <div className="grid grid-cols-12 gap-2 px-2 py-2 text-[9px] font-black uppercase tracking-widest text-slate-500 border-b border-white/10 mb-2">
+                  <div className="col-span-6">Producto</div>
+                  <div className="col-span-3 text-center">Cant.</div>
+                  <div className="col-span-3 text-right">Total</div>
                 </div>
-              );
-            })}
+                <div className="space-y-1">
+                  {items.map(item => {
+                    const p = products.find(prod => prod.id === item.productId)!;
+                    return (
+                      <div key={item.id} className="grid grid-cols-12 gap-2 px-2 py-3 items-center border-b border-white/5 last:border-0 group hover:bg-white/5 rounded-xl transition-all">
+                        <div className="col-span-6">
+                          <p className="font-bold text-slate-100 text-[11px] uppercase leading-tight truncate">{p.name}</p>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="text-[9px] text-slate-500 font-black tracking-tighter">${item.unitPrice.toLocaleString()}</span>
+                            {item.bonusQuantity > 0 && (
+                              <span className="text-emerald-400 font-black text-[9px] flex items-center gap-0.5">
+                                <Zap size={8} className="fill-emerald-400" /> +{item.bonusQuantity}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="col-span-3 flex flex-col items-center">
+                          <div className="flex items-center bg-slate-800 rounded-lg p-0.5 border border-white/5 scale-90">
+                            <button 
+                              onClick={() => updateCart(item.productId, -1)}
+                              className="w-6 h-6 flex items-center justify-center hover:bg-white/10 rounded-md text-slate-400 transition-all"
+                            >
+                              <Minus size={12} />
+                            </button>
+                            <input 
+                              type="number" 
+                              value={item.quantity}
+                              onChange={(e) => setQuantity(item.productId, parseInt(e.target.value) || 0)}
+                              className="w-8 bg-transparent text-center font-black text-white outline-none text-[11px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <button 
+                              onClick={() => updateCart(item.productId, 1)}
+                              className="w-6 h-6 flex items-center justify-center hover:bg-white/10 rounded-md text-slate-400 transition-all"
+                            >
+                              <Plus size={12} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="col-span-3 text-right flex flex-col items-end">
+                          <p className="font-black text-white font-mono text-[11px] tracking-tighter">${(item.quantity * item.unitPrice).toLocaleString()}</p>
+                          <button 
+                            onClick={() => setQuantity(item.productId, 0)}
+                            className="text-slate-600 hover:text-red-400 transition-colors mt-1"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-3 mb-8">
