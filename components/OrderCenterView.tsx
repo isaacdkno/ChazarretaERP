@@ -72,19 +72,20 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
     const items: OrderItem[] = Object.entries(orderCart).map(([pid, qty]) => {
       const p = products.find(prod => prod.id === pid)!;
       const unitPrice = p.prices?.[priceListId] || 0;
+      const numQty = Number(qty);
       
       let bonusQty = 0;
       if (p.bonusEnabled && p.bonusThreshold && p.bonusPercentage) {
-        if (qty >= p.bonusThreshold) {
-          bonusQty = Math.ceil(qty * (p.bonusPercentage / 100));
+        if (numQty >= p.bonusThreshold) {
+          bonusQty = Math.ceil(numQty * (p.bonusPercentage / 100));
         }
       }
       
-      total += qty * unitPrice;
+      total += numQty * unitPrice;
       return {
         id: Math.random().toString(36).substr(2, 9),
         productId: pid,
-        quantity: qty,
+        quantity: numQty,
         bonusQuantity: bonusQty,
         unitPrice: unitPrice
       };
@@ -274,7 +275,7 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
                           return (
                             <div key={pid} className="flex justify-between items-center text-sm font-bold">
                                <p className="text-slate-800 truncate max-w-[140px] uppercase">{p.name}</p>
-                               <p className="text-slate-900">${(qty * (p.prices?.[customers.find(c => c.id === selectedCustomerId)?.priceListId || 'l1'] || 0)).toLocaleString()}</p>
+                               <p className="text-slate-900">${(Number(qty) * (p.prices?.[customers.find(c => c.id === selectedCustomerId)?.priceListId || 'l1'] || 0)).toLocaleString()}</p>
                             </div>
                           );
                         })}

@@ -34,7 +34,7 @@ import CollectionView from './components/CollectionView';
 import AdminDashboard from './components/AdminDashboard';
 
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<{name: string, role: UserRole} | null>(null);
+  const [currentUser, setCurrentUser] = useState<{name: string, role: UserRole, email?: string} | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -205,52 +205,7 @@ const App: React.FC = () => {
   }
 
   if (!currentUser) {
-    return (
-      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-6 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/20 via-slate-900 to-slate-900">
-        <div className="bg-white/95 backdrop-blur-xl rounded-[2.5rem] shadow-2xl w-full max-w-lg p-10 border border-white/20">
-          <div className="text-center mb-10">
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-blue-500/30 transform rotate-3">
-              <Warehouse size={40} />
-            </div>
-            <h1 className="text-4xl font-black text-slate-800 tracking-tight mb-2 uppercase">CHAZARRETA <span className="text-blue-600">ERP</span></h1>
-            <p className="text-slate-500 font-medium">Seleccione su puesto de trabajo</p>
-          </div>
-          
-          <div className="grid grid-cols-1 gap-3 max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
-            {[
-              { role: UserRole.DISTRIBUTOR, label: 'Distribuidor / Sucursal', desc: 'Pedidos y Cuenta Corriente', color: 'bg-blue-50 text-blue-600' },
-              { role: UserRole.GATE, label: 'Portería', desc: 'Cambios y Vencidos', color: 'bg-emerald-50 text-emerald-600' },
-              { role: UserRole.ORDER_CENTER, label: 'Centro de Pedidos', desc: 'Validación y Precios', color: 'bg-purple-50 text-purple-600' },
-              { role: UserRole.FACTORY, label: 'Producción', desc: 'Consolidado de Fábrica', color: 'bg-orange-50 text-orange-600' },
-              { role: UserRole.DISPATCH, label: 'Despacho', desc: 'Logística y Hoja de Ruta', color: 'bg-indigo-50 text-indigo-600' },
-              { role: UserRole.COLLECTION, label: 'Cobranza', desc: 'Tesorería y Créditos', color: 'bg-cyan-50 text-cyan-600' },
-              { role: UserRole.ADMIN, label: 'Administrador', desc: 'Auditoría y Config DB', color: 'bg-slate-100 text-slate-700' },
-            ].map(item => (
-              <button
-                key={item.role}
-                onClick={() => setCurrentUser({ name: 'Operador Chazarreta', role: item.role })}
-                className="flex items-center p-5 border border-slate-100 rounded-3xl hover:bg-white hover:shadow-xl hover:border-blue-200 transition-all group text-left"
-              >
-                <div className={`w-12 h-12 ${item.color} rounded-2xl flex items-center justify-center mr-4 group-hover:scale-110 transition-transform`}>
-                  {item.role === UserRole.DISTRIBUTOR && <Store size={22}/>}
-                  {item.role === UserRole.GATE && <Truck size={22}/>}
-                  {item.role === UserRole.ORDER_CENTER && <ClipboardList size={22}/>}
-                  {item.role === UserRole.FACTORY && <Warehouse size={22}/>}
-                  {item.role === UserRole.DISPATCH && <Truck size={22}/>}
-                  {item.role === UserRole.COLLECTION && <BadgeDollarSign size={22}/>}
-                  {item.role === UserRole.ADMIN && <Settings size={22}/>}
-                </div>
-                <div className="flex-1">
-                  <p className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors uppercase text-sm tracking-tight">{item.label}</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{item.desc}</p>
-                </div>
-                <ChevronRight className="text-slate-300 group-hover:text-blue-500 transform group-hover:translate-x-1 transition-all" size={20} />
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+    return <Login onLogin={(user) => setCurrentUser(user)} />;
   }
 
   return (
@@ -328,7 +283,7 @@ const App: React.FC = () => {
             <Routes>
               <Route path="/" element={<HomeDashboard role={currentUser.role} orders={orders} customers={customers} isSynced={isSynced} dbReady={dbReady} />} />
               <Route path="/orders" element={<OrdersTable orders={orders} />} />
-              <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={products} />} />
+              <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={products} currentUser={currentUser} />} />
               <Route path="/gate" element={<GateView gateEntries={gateEntries} setGateEntries={setGateEntries} customers={customers} products={products} />} />
               <Route path="/center" element={<OrderCenterView orders={orders} updateOrder={updateOrder} addOrder={addOrder} products={products} customers={customers} />} />
               <Route path="/factory" element={<FactoryView orders={orders} />} />
@@ -451,5 +406,121 @@ const OrdersTable: React.FC<{orders: Order[]}> = ({ orders }) => (
     </div>
   </div>
 );
+
+const Login: React.FC<{onLogin: (user: {name: string, role: UserRole, email: string}) => void}> = ({ onLogin }) => {
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<UserRole>(UserRole.DISTRIBUTOR);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // En una app real aquí iría la lógica de Supabase Auth
+    // Por ahora simulamos el login exitoso
+    onLogin({ name: username || 'Usuario', role, email });
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-6 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/20 via-slate-900 to-slate-900">
+      <div className="bg-white/95 backdrop-blur-xl rounded-[2.5rem] shadow-2xl w-full max-w-lg p-10 border border-white/20">
+        <div className="text-center mb-8">
+          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-blue-500/30 transform rotate-3">
+            <Warehouse size={40} />
+          </div>
+          <h1 className="text-4xl font-black text-slate-800 tracking-tight mb-2 uppercase">CHAZARRETA <span className="text-blue-600">ERP</span></h1>
+          <p className="text-slate-500 font-medium">{isRegistering ? 'Cree su cuenta de acceso' : 'Inicie sesión para continuar'}</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-4">Correo Electrónico</label>
+            <input 
+              type="email" 
+              required
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none font-bold transition-all"
+              placeholder="ejemplo@correo.com"
+            />
+          </div>
+
+          {isRegistering && (
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-4">Nombre de Usuario / Sucursal</label>
+              <input 
+                type="text" 
+                required
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none font-bold transition-all"
+                placeholder="Nombre para facturación"
+              />
+            </div>
+          )}
+
+          {!isRegistering && (
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-4">Nombre de Usuario</label>
+              <input 
+                type="text" 
+                required
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none font-bold transition-all"
+                placeholder="Su usuario"
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-4">Contraseña</label>
+            <input 
+              type="password" 
+              required
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none font-bold transition-all"
+              placeholder="••••••••"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-4">Puesto de Trabajo</label>
+            <select 
+              value={role}
+              onChange={e => setRole(e.target.value as UserRole)}
+              className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none font-bold transition-all appearance-none"
+            >
+              <option value={UserRole.DISTRIBUTOR}>Distribuidor / Sucursal</option>
+              <option value={UserRole.GATE}>Portería</option>
+              <option value={UserRole.ORDER_CENTER}>Centro de Pedidos</option>
+              <option value={UserRole.FACTORY}>Producción</option>
+              <option value={UserRole.DISPATCH}>Despacho</option>
+              <option value={UserRole.COLLECTION}>Cobranza</option>
+              <option value={UserRole.ADMIN}>Administrador</option>
+            </select>
+          </div>
+
+          <button 
+            type="submit"
+            className="w-full py-5 bg-blue-600 text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-blue-900/20 hover:bg-blue-700 transition-all active:scale-95 mt-4"
+          >
+            {isRegistering ? 'Crear Cuenta' : 'Entrar al Sistema'}
+          </button>
+        </form>
+
+        <div className="mt-8 text-center">
+          <button 
+            onClick={() => setIsRegistering(!isRegistering)}
+            className="text-slate-400 font-bold uppercase text-[10px] tracking-widest hover:text-blue-600 transition-colors"
+          >
+            {isRegistering ? '¿Ya tiene cuenta? Inicie sesión' : '¿No tiene cuenta? Regístrese aquí'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default App;
