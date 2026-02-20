@@ -13,7 +13,6 @@ interface Props {
 const DistributorView: React.FC<Props> = ({ addOrder, customers, products, currentUser }) => {
   const [cart, setCart] = useState<{[id: string]: number}>({});
   const [search, setSearch] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
   const [success, setSuccess] = useState(false);
 
   // SAFE DEFAULTS INTERNOS
@@ -104,79 +103,101 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products, curre
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
-      {/* Product Selection */}
-      <div className="lg:col-span-2 space-y-6">
+    <div className="flex flex-col lg:flex-row gap-8 animate-in fade-in duration-500">
+      {/* Product Selection List */}
+      <div className="flex-1 space-y-6">
         <div className="flex flex-col space-y-4">
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Carga de Pedido</h1>
-          <p className="text-slate-500 font-medium">Hola <span className="text-blue-600 font-bold">{currentUser.name}</span>, busque productos para agregar a su comanda.</p>
+          <p className="text-slate-500 font-medium">Hola <span className="text-blue-600 font-bold">{currentUser.name}</span>, seleccione los productos para su comanda.</p>
           
           <div className="relative">
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
-                type="text" 
-                placeholder="Escriba el nombre del producto..." 
-                value={search}
-                onFocus={() => setShowDropdown(true)}
-                onChange={e => {
-                  setSearch(e.target.value);
-                  setShowDropdown(true);
-                }}
-                className="pl-12 pr-6 py-4 border-2 border-slate-200 rounded-[1.5rem] focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none w-full font-bold transition-all text-lg shadow-sm"
-              />
-            </div>
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="Buscar por nombre o marca..." 
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-12 pr-6 py-4 border-2 border-slate-200 rounded-[1.5rem] focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none w-full font-bold transition-all text-lg shadow-sm"
+            />
+          </div>
+        </div>
 
-            {showDropdown && search.length > 0 && (
-              <div className="absolute z-50 mt-2 w-full bg-white border border-slate-200 rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-top-2 duration-200 max-h-96 overflow-y-auto custom-scrollbar">
-                {filteredProducts.length > 0 ? (
-                  filteredProducts.map(product => {
-                    const priceListId = customer?.priceListId || 'l1';
-                    const unitPrice = product.prices[priceListId] || 0;
+        {/* Compact Product List */}
+        <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
+          <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-4 bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
+            <div className="col-span-6">Producto</div>
+            <div className="col-span-3 text-right">Precio Unit.</div>
+            <div className="col-span-3 text-right">Acción</div>
+          </div>
+          
+          <div className="divide-y divide-slate-100 max-h-[60vh] overflow-y-auto custom-scrollbar">
+            {filteredProducts.length > 0 ? (
+              filteredProducts.map(product => {
+                const priceListId = customer?.priceListId || 'l1';
+                const unitPrice = product.prices[priceListId] || 0;
+                const inCart = cart[product.id] || 0;
+                
+                return (
+                  <div key={product.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-slate-50 transition-colors group">
+                    <div className="col-span-1 md:col-span-6 flex flex-col">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${product.brand === 'La Fornarina' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
+                          {product.brand}
+                        </span>
+                        {product.bonusEnabled && (
+                          <span className="text-[9px] font-black uppercase text-emerald-600 flex items-center gap-0.5">
+                            <Zap size={10} className="fill-emerald-600" /> Oferta
+                          </span>
+                        )}
+                      </div>
+                      <p className="font-black text-slate-800 uppercase text-sm md:text-base">{product.name}</p>
+                    </div>
                     
-                    return (
-                      <button
-                        key={product.id}
-                        onClick={() => {
-                          updateCart(product.id, 1);
-                          setSearch('');
-                          setShowDropdown(false);
-                        }}
-                        className="w-full text-left px-6 py-4 hover:bg-blue-50 border-b border-slate-50 last:border-0 transition-colors flex items-center justify-between group"
-                      >
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${product.brand === 'La Fornarina' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
-                              {product.brand}
-                            </span>
-                            {product.bonusEnabled && (
-                              <span className="text-[9px] font-black uppercase text-emerald-600 flex items-center gap-0.5">
-                                <Zap size={10} className="fill-emerald-600" /> Oferta
-                              </span>
-                            )}
-                          </div>
-                          <p className="font-black text-slate-800 group-hover:text-blue-600 transition-colors uppercase">{product.name}</p>
+                    <div className="col-span-1 md:col-span-3 text-left md:text-right">
+                      <p className="font-black text-slate-900 text-lg md:text-xl tracking-tighter">${unitPrice.toLocaleString()}</p>
+                    </div>
+                    
+                    <div className="col-span-1 md:col-span-3 flex justify-end">
+                      {inCart > 0 ? (
+                        <div className="flex items-center bg-blue-50 rounded-xl p-1 border border-blue-100">
+                          <button 
+                            onClick={() => updateCart(product.id, -1)}
+                            className="w-8 h-8 flex items-center justify-center hover:bg-blue-100 rounded-lg text-blue-600 transition-all"
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <span className="w-8 text-center font-black text-blue-700">{inCart}</span>
+                          <button 
+                            onClick={() => updateCart(product.id, 1)}
+                            className="w-8 h-8 flex items-center justify-center hover:bg-blue-100 rounded-lg text-blue-600 transition-all"
+                          >
+                            <Plus size={14} />
+                          </button>
                         </div>
-                        <div className="text-right">
-                          <p className="font-black text-slate-900 text-lg">${unitPrice.toLocaleString()}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Click para agregar</p>
-                        </div>
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="px-6 py-8 text-center">
-                    <Package size={32} className="mx-auto mb-2 text-slate-200" />
-                    <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">No se encontraron productos</p>
+                      ) : (
+                        <button 
+                          onClick={() => updateCart(product.id, 1)}
+                          className="px-4 py-2 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-200 flex items-center gap-2"
+                        >
+                          <Plus size={14} /> Agregar
+                        </button>
+                      )}
+                    </div>
                   </div>
-                )}
+                );
+              })
+            ) : (
+              <div className="px-6 py-12 text-center">
+                <Package size={48} className="mx-auto mb-4 text-slate-200" />
+                <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">No se encontraron productos</p>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      <div className="lg:col-span-1">
+      {/* Cart Sidebar */}
+      <div className="w-full lg:w-96 shrink-0">
         <div className="bg-slate-900 text-white rounded-[2.5rem] shadow-2xl p-8 sticky top-8 border border-white/10 ring-4 ring-blue-500/20">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center space-x-3">
