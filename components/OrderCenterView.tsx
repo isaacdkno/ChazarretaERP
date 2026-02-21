@@ -28,6 +28,7 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
   const [searchQuery, setSearchQuery] = useState('');
   
   const [showOrderForm, setShowOrderForm] = useState(false);
+  const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [orderCart, setOrderCart] = useState<{[id: string]: number}>({});
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -206,6 +207,7 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
                       </span>
                     </td>
                     <td className="px-8 py-5 text-right space-x-2">
+                       <button onClick={() => setViewingOrder(order)} className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-blue-600 shadow-sm transition-all"><Search size={16}/></button>
                        {(order.status === OrderStatus.PENDING || order.status === OrderStatus.VALIDATED) && (
                          <>
                           <button onClick={() => openEditOrder(order)} className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-blue-600 shadow-sm"><Edit3 size={16}/></button>
@@ -292,6 +294,93 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
                    </button>
                 </div>
              </div>
+          </div>
+        </div>
+      )}
+      {viewingOrder && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-3xl rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-10">
+              <div className="flex justify-between items-start mb-10">
+                <div>
+                  <div className="flex items-center gap-3 mb-2">
+                    <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight">Comanda Detallada</h2>
+                    <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border ${
+                      viewingOrder.status === OrderStatus.PENDING ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                      viewingOrder.status === OrderStatus.VALIDATED ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                      'bg-slate-100 text-slate-500 border-slate-200'
+                    }`}>
+                      {viewingOrder.status}
+                    </span>
+                  </div>
+                  <p className="text-slate-400 font-bold uppercase text-xs tracking-widest">ID: #ORD-{viewingOrder.id.toUpperCase()} • {new Date(viewingOrder.createdAt).toLocaleString()}</p>
+                </div>
+                <button onClick={() => setViewingOrder(null)} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all"><X size={24}/></button>
+              </div>
+
+              <div className="bg-slate-50 rounded-[2.5rem] p-8 border border-slate-100 mb-8">
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-blue-600 shadow-sm border border-slate-100">
+                    <DollarSign size={28} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente / Distribuidor</p>
+                    <p className="text-xl font-black text-slate-800 uppercase tracking-tight">{viewingOrder.customerName}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-12 gap-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-2">
+                    <div className="col-span-6">Producto</div>
+                    <div className="col-span-2 text-center">Cant.</div>
+                    <div className="col-span-2 text-center">Bonif.</div>
+                    <div className="col-span-2 text-right">Subtotal</div>
+                  </div>
+                  <div className="max-h-[30vh] overflow-y-auto pr-2 custom-scrollbar space-y-2">
+                    {viewingOrder.items.map(item => {
+                      const p = products.find(prod => prod.id === item.productId);
+                      return (
+                        <div key={item.id} className="grid grid-cols-12 gap-4 px-4 py-3 bg-white rounded-2xl border border-slate-100 items-center">
+                          <div className="col-span-6">
+                            <p className="font-bold text-slate-800 uppercase text-xs">{p?.name || 'Producto Desconocido'}</p>
+                            <p className="text-[10px] text-slate-400 font-bold">${item.unitPrice.toLocaleString()} x unidad</p>
+                          </div>
+                          <div className="col-span-2 text-center font-black text-slate-700">{item.quantity}</div>
+                          <div className="col-span-2 text-center font-black text-emerald-500">{item.bonusQuantity > 0 ? `+${item.bonusQuantity}` : '-'}</div>
+                          <div className="col-span-2 text-right font-black text-slate-900">${(item.quantity * item.unitPrice).toLocaleString()}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between px-8">
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total de la Operación</p>
+                  <p className="text-4xl font-black text-slate-900 tracking-tighter">${viewingOrder.totalAmount.toLocaleString()}</p>
+                </div>
+                <div className="flex gap-4">
+                  {viewingOrder.status === OrderStatus.PENDING && (
+                    <button 
+                      onClick={() => {
+                        validateOrder(viewingOrder);
+                        setViewingOrder(null);
+                      }}
+                      className="px-10 py-5 bg-emerald-600 text-white font-black uppercase tracking-[0.2em] text-xs rounded-2xl shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all flex items-center gap-3"
+                    >
+                      <CheckCircle2 size={20} /> Validar Ahora
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => setViewingOrder(null)}
+                    className="px-10 py-5 bg-slate-900 text-white font-black uppercase tracking-[0.2em] text-xs rounded-2xl shadow-xl hover:bg-slate-800 transition-all"
+                  >
+                    Cerrar Vista
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
