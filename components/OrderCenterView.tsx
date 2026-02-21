@@ -27,6 +27,7 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
   const [activeTab, setActiveTab] = useState<'VALIDATE' | 'PRODUCTS' | 'BONUS' | 'PRICES'>('VALIDATE');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'VALIDATED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [productSearchQuery, setProductSearchQuery] = useState('');
   
   const [showOrderForm, setShowOrderForm] = useState(false);
   const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
@@ -58,6 +59,17 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
     setOrderCart(prev => {
       const current = prev[productId] || 0;
       const next = Math.max(0, current + delta);
+      if (next === 0) {
+        const { [productId]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [productId]: next };
+    });
+  };
+
+  const setQuantity = (productId: string, qty: number) => {
+    setOrderCart(prev => {
+      const next = Math.max(0, qty);
       if (next === 0) {
         const { [productId]: _, ...rest } = prev;
         return rest;
@@ -251,9 +263,21 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-5xl h-[85vh] rounded-[3rem] shadow-2xl flex overflow-hidden animate-in zoom-in-95 duration-300">
              <div className="flex-1 p-10 overflow-y-auto bg-slate-50/50 border-r border-slate-100">
-                <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-8">{editingOrder ? 'Editando Comanda' : 'Nueva Comanda'}</h2>
+                <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-6">{editingOrder ? 'Editando Comanda' : 'Nueva Comanda'}</h2>
+                
+                <div className="relative mb-6">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input 
+                    type="text" 
+                    placeholder="Buscar producto por nombre o marca..." 
+                    value={productSearchQuery}
+                    onChange={e => setProductSearchQuery(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 font-bold text-slate-700 transition-all"
+                  />
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {products.map(p => {
+                  {products.filter(p => p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.brand.toLowerCase().includes(productSearchQuery.toLowerCase())).map(p => {
                     const cust = customers.find(c => c.id === selectedCustomerId);
                     const listId = cust?.priceListId || 'l1';
                     return (
@@ -263,10 +287,15 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
                             <p className="font-bold text-slate-800 uppercase text-sm">{p.name}</p>
                             <p className="text-xs font-black text-blue-600 mt-1">${(p.prices?.[listId] || 0).toLocaleString()}</p>
                          </div>
-                         <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl">
-                            <button onClick={() => updateCart(p.id, -1)} className="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg">-</button>
-                            <span className="font-black text-slate-800 min-w-[20px] text-center">{orderCart[p.id] || 0}</span>
-                            <button onClick={() => updateCart(p.id, 1)} className="w-8 h-8 flex items-center justify-center bg-blue-600 text-white rounded-lg shadow-md">+</button>
+                         <div className="flex items-center gap-1 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                            <button onClick={() => updateCart(p.id, -1)} className="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-100 transition-all">-</button>
+                            <input 
+                              type="number"
+                              value={orderCart[p.id] || 0}
+                              onChange={(e) => setQuantity(p.id, parseInt(e.target.value) || 0)}
+                              className="w-12 text-center font-black text-slate-800 bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <button onClick={() => updateCart(p.id, 1)} className="w-8 h-8 flex items-center justify-center bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-all">+</button>
                          </div>
                       </div>
                     );

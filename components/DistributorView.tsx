@@ -289,7 +289,12 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products, curre
                               >
                                 <Minus size={14} />
                               </button>
-                              <span className="w-8 text-center font-black text-blue-700">{inCart}</span>
+                              <input 
+                                type="number"
+                                value={inCart}
+                                onChange={(e) => setQuantity(product.id, parseInt(e.target.value) || 0)}
+                                className="w-10 text-center font-black text-blue-700 bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
                               <button 
                                 onClick={() => updateCart(product.id, 1)}
                                 className="w-8 h-8 flex items-center justify-center hover:bg-blue-100 rounded-lg text-blue-600 transition-all"
