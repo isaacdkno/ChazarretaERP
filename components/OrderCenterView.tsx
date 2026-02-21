@@ -12,6 +12,9 @@ import {
   DollarSign,
   ShoppingCart,
   CheckCircle2,
+  Zap,
+  Minus,
+  Plus
 } from 'lucide-react';
 import { Order, OrderStatus, Product, Customer, OrderItem } from '../types';
 
@@ -276,30 +279,82 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {products.filter(p => p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.brand.toLowerCase().includes(productSearchQuery.toLowerCase())).map(p => {
-                    const cust = customers.find(c => c.id === selectedCustomerId);
-                    const listId = cust?.priceListId || 'l1';
-                    return (
-                      <div key={p.id} className="bg-white border border-slate-200 p-5 rounded-2xl flex justify-between items-center hover:border-blue-300 transition-all">
-                         <div>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-1">{p.brand}</p>
-                            <p className="font-bold text-slate-800 uppercase text-sm">{p.name}</p>
-                            <p className="text-xs font-black text-blue-600 mt-1">${(p.prices?.[listId] || 0).toLocaleString()}</p>
-                         </div>
-                         <div className="flex items-center gap-1 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
-                            <button onClick={() => updateCart(p.id, -1)} className="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-100 transition-all">-</button>
-                            <input 
-                              type="number"
-                              value={orderCart[p.id] || 0}
-                              onChange={(e) => setQuantity(p.id, parseInt(e.target.value) || 0)}
-                              className="w-12 text-center font-black text-slate-800 bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            />
-                            <button onClick={() => updateCart(p.id, 1)} className="w-8 h-8 flex items-center justify-center bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-all">+</button>
-                         </div>
+                <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
+                  <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-4 bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <div className="col-span-6">Producto</div>
+                    <div className="col-span-3 text-right">Precio Unit.</div>
+                    <div className="col-span-3 text-right">Acción</div>
+                  </div>
+                  
+                  <div className="divide-y divide-slate-100 max-h-[50vh] overflow-y-auto custom-scrollbar">
+                    {products.filter(p => p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.brand.toLowerCase().includes(productSearchQuery.toLowerCase())).length > 0 ? (
+                      products.filter(p => p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.brand.toLowerCase().includes(productSearchQuery.toLowerCase())).map(p => {
+                        const cust = customers.find(c => c.id === selectedCustomerId);
+                        const listId = cust?.priceListId || 'l1';
+                        const unitPrice = p.prices?.[listId] || 0;
+                        const inCart = orderCart[p.id] || 0;
+                        
+                        return (
+                          <div key={p.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-slate-50 transition-colors group">
+                            <div className="col-span-1 md:col-span-6 flex flex-col">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${p.brand === 'La Fornarina' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
+                                  {p.brand}
+                                </span>
+                                {p.bonusEnabled && (
+                                  <span className="text-[9px] font-black uppercase text-emerald-600 flex items-center gap-0.5">
+                                    <Zap size={10} className="fill-emerald-600" /> Oferta
+                                  </span>
+                                )}
+                              </div>
+                              <p className="font-black text-slate-800 uppercase text-sm md:text-base">{p.name}</p>
+                            </div>
+                            
+                            <div className="col-span-1 md:col-span-3 text-left md:text-right">
+                              <p className="font-black text-slate-900 text-lg md:text-xl tracking-tighter">${unitPrice.toLocaleString()}</p>
+                            </div>
+                            
+                            <div className="col-span-1 md:col-span-3 flex justify-end">
+                              {inCart > 0 ? (
+                                <div className="flex items-center bg-blue-50 rounded-xl p-1 border border-blue-100">
+                                  <button 
+                                    onClick={() => updateCart(p.id, -1)}
+                                    className="w-8 h-8 flex items-center justify-center hover:bg-blue-100 rounded-lg text-blue-600 transition-all"
+                                  >
+                                    <Minus size={14} />
+                                  </button>
+                                  <input 
+                                    type="number"
+                                    value={inCart}
+                                    onChange={(e) => setQuantity(p.id, parseInt(e.target.value) || 0)}
+                                    className="w-10 text-center font-black text-blue-700 bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                  <button 
+                                    onClick={() => updateCart(p.id, 1)}
+                                    className="w-8 h-8 flex items-center justify-center hover:bg-blue-100 rounded-lg text-blue-600 transition-all"
+                                  >
+                                    <Plus size={14} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button 
+                                  onClick={() => updateCart(p.id, 1)}
+                                  className="px-4 py-2 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-200 flex items-center gap-2"
+                                >
+                                  <Plus size={14} /> Agregar
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="px-6 py-12 text-center">
+                        <Package size={48} className="mx-auto mb-4 text-slate-200" />
+                        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">No se encontraron productos</p>
                       </div>
-                    );
-                  })}
+                    )}
+                  </div>
                 </div>
              </div>
 
