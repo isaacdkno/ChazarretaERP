@@ -19,10 +19,11 @@ import {
   Github,
   AlertCircle,
   RefreshCw,
-  Database
+  Database,
+  Package
 } from 'lucide-react';
 
-import { UserRole, Order, Customer, OrderStatus, GateEntry, AuditLog, Product } from './types';
+import { UserRole, Order, Customer, OrderStatus, GateEntry, AuditLog, Product, PriceList } from './types';
 import { supabase, isSupabaseConfigured } from './supabase';
 
 import DistributorView from './components/DistributorView';
@@ -32,11 +33,13 @@ import FactoryView from './components/FactoryView';
 import DispatchView from './components/DispatchView';
 import CollectionView from './components/CollectionView';
 import AdminDashboard from './components/AdminDashboard';
+import ProductManagement from './components/ProductManagement';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<{name: string, role: UserRole, email?: string} | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [priceLists, setPriceLists] = useState<PriceList[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [gateEntries, setGateEntries] = useState<GateEntry[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -73,6 +76,17 @@ const App: React.FC = () => {
       }
 
       setDbReady(true);
+      
+      // 0. Listas de Precios
+      const { data: lists } = await supabase.from('price_lists').select('*');
+      if (lists) {
+        setPriceLists(lists.map(l => ({
+          id: l.id,
+          name: l.name,
+          description: l.description || ''
+        })));
+      }
+
       if (custs) {
         setCustomers(custs.map(c => ({
           id: c.id,
@@ -245,6 +259,7 @@ const App: React.FC = () => {
             <p className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">General</p>
             <SidebarLink to="/" icon={<LayoutDashboard size={20} />} label="Inicio" />
             <SidebarLink to="/orders" icon={<ClipboardList size={20} />} label="Registro Comandas" />
+            {(currentUser.role === UserRole.ADMIN) && <SidebarLink to="/catalog" icon={<Package size={20} />} label="Productos y Precios" />}
             
             <p className="px-4 py-2 mt-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Tu Módulo</p>
             {(currentUser.role === UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/new-order" icon={<Plus size={20} />} label="Cargar Pedido" />}
@@ -303,6 +318,10 @@ const App: React.FC = () => {
               <Route path="/" element={<HomeDashboard role={currentUser.role} orders={displayOrders} customers={displayCustomers} isSynced={isSynced} dbReady={dbReady} />} />
               <Route path="/orders" element={<OrdersTable orders={displayOrders} role={currentUser.role} />} />
               
+              {currentUser.role === UserRole.ADMIN && (
+                <Route path="/catalog" element={<ProductManagement products={products} priceLists={priceLists} onRefresh={fetchData} />} />
+              )}
+
               {(currentUser.role === UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && (
                 <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={products} currentUser={currentUser} />} />
               )}
