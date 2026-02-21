@@ -236,12 +236,12 @@ const App: React.FC = () => {
             <SidebarLink to="/orders" icon={<ClipboardList size={20} />} label="Registro Comandas" />
             
             <p className="px-4 py-2 mt-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Tu Módulo</p>
-            {currentUser.role === UserRole.DISTRIBUTOR && <SidebarLink to="/new-order" icon={<Plus size={20} />} label="Cargar Pedido" />}
-            {currentUser.role === UserRole.GATE && <SidebarLink to="/gate" icon={<Truck size={20} />} label="Portería" />}
-            {currentUser.role === UserRole.ORDER_CENTER && <SidebarLink to="/center" icon={<Settings size={20} />} label="Gestión de Pedidos" />}
-            {currentUser.role === UserRole.FACTORY && <SidebarLink to="/factory" icon={<Box size={20} />} label="Producción" />}
-            {currentUser.role === UserRole.DISPATCH && <SidebarLink to="/dispatch" icon={<Truck size={20} />} label="Hoja de Ruta" />}
-            {currentUser.role === UserRole.COLLECTION && <SidebarLink to="/collection" icon={<BadgeDollarSign size={20} />} label="Caja y Cobranza" />}
+            {(currentUser.role === UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/new-order" icon={<Plus size={20} />} label="Cargar Pedido" />}
+            {(currentUser.role === UserRole.GATE || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/gate" icon={<Truck size={20} />} label="Portería" />}
+            {(currentUser.role === UserRole.ORDER_CENTER || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/center" icon={<Settings size={20} />} label="Gestión de Pedidos" />}
+            {(currentUser.role === UserRole.FACTORY || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/factory" icon={<Box size={20} />} label="Producción" />}
+            {(currentUser.role === UserRole.DISPATCH || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/dispatch" icon={<Truck size={20} />} label="Hoja de Ruta" />}
+            {(currentUser.role === UserRole.COLLECTION || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/collection" icon={<BadgeDollarSign size={20} />} label="Caja y Cobranza" />}
             {currentUser.role === UserRole.ADMIN && <SidebarLink to="/audit" icon={<Github size={20} />} label="Sincronización Cloud" />}
           </div>
 
@@ -292,11 +292,11 @@ const App: React.FC = () => {
               <Route path="/" element={<HomeDashboard role={currentUser.role} orders={displayOrders} customers={displayCustomers} isSynced={isSynced} dbReady={dbReady} />} />
               <Route path="/orders" element={<OrdersTable orders={displayOrders} role={currentUser.role} />} />
               
-              {currentUser.role === UserRole.DISTRIBUTOR && (
+              {(currentUser.role === UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && (
                 <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={products} currentUser={currentUser} />} />
               )}
 
-              {currentUser.role !== UserRole.DISTRIBUTOR && (
+              {(currentUser.role !== UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && (
                 <>
                   <Route path="/gate" element={<GateView gateEntries={gateEntries} setGateEntries={setGateEntries} customers={customers} products={products} />} />
                   <Route path="/center" element={<OrderCenterView orders={orders} updateOrder={updateOrder} addOrder={addOrder} products={products} customers={customers} />} />
