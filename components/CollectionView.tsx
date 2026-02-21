@@ -36,12 +36,24 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
 
   const totalCollected = cashAmount + transferAmount;
 
-  const customerOrders = orders.filter(o => {
-    const customer = customers.find(c => c.id === selectedCustomerId);
-    return o.customerId === selectedCustomerId && 
-           o.customerName.toLowerCase() === customer?.name.toLowerCase() &&
-           (o.status === OrderStatus.DISPATCHED || o.status === OrderStatus.PAID_PARTIAL || o.status === OrderStatus.VALIDATED);
-  }).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const getCustomerPendingOrders = (customerId: string) => {
+    const customer = customers.find(c => c.id === customerId);
+    if (!customer) return [];
+    return orders.filter(o => 
+      o.customerId === customerId && 
+      o.customerName.toLowerCase() === customer.name.toLowerCase() &&
+      (o.status === OrderStatus.DISPATCHED || o.status === OrderStatus.PAID_PARTIAL || o.status === OrderStatus.VALIDATED)
+    );
+  };
+
+  const customerOrders = getCustomerPendingOrders(selectedCustomerId).sort((a, b) => 
+    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
+  const currentCustomerBalance = Math.max(
+    customers.find(c => c.id === selectedCustomerId)?.balance || 0,
+    customerOrders.reduce((sum, o) => sum + o.totalAmount, 0)
+  );
 
   // Reset selection when customer changes
   useEffect(() => {
@@ -264,9 +276,8 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
                 >
                   <option value="">Seleccionar Distribuidor...</option>
                   {customers.map(c => {
-                    const pendingTotal = orders
-                      .filter(o => o.customerId === c.id && (o.status === OrderStatus.DISPATCHED || o.status === OrderStatus.PAID_PARTIAL || o.status === OrderStatus.VALIDATED))
-                      .reduce((sum, o) => sum + o.totalAmount, 0);
+                    const pendingOrders = getCustomerPendingOrders(c.id);
+                    const pendingTotal = pendingOrders.reduce((sum, o) => sum + o.totalAmount, 0);
                     const displayBalance = Math.max(c.balance, pendingTotal);
                     return (
                       <option key={c.id} value={c.id}>
@@ -283,10 +294,7 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
                   <div className="flex items-end justify-between">
                     <div>
                       <p className="text-3xl font-black tracking-tighter">
-                        ${Math.max(
-                          customers.find(c => c.id === selectedCustomerId)?.balance || 0,
-                          customerOrders.reduce((sum, o) => sum + o.totalAmount, 0)
-                        ).toLocaleString()}
+                        ${currentCustomerBalance.toLocaleString()}
                       </p>
                       <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Saldo Total Pendiente</p>
                     </div>
