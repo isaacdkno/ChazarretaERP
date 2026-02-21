@@ -263,9 +263,42 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
                   onChange={e => setSelectedCustomerId(e.target.value)}
                 >
                   <option value="">Seleccionar Distribuidor...</option>
-                  {customers.map(c => <option key={c.id} value={c.id}>{c.name} (Saldo: ${c.balance.toLocaleString()})</option>)}
+                  {customers.map(c => {
+                    const pendingTotal = orders
+                      .filter(o => o.customerId === c.id && (o.status === OrderStatus.DISPATCHED || o.status === OrderStatus.PAID_PARTIAL || o.status === OrderStatus.VALIDATED))
+                      .reduce((sum, o) => sum + o.totalAmount, 0);
+                    const displayBalance = Math.max(c.balance, pendingTotal);
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.name} (Saldo: ${displayBalance.toLocaleString()})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
+
+              {selectedCustomerId && (
+                <div className="p-6 bg-slate-900 rounded-3xl text-white shadow-xl animate-in fade-in slide-in-from-top-2">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Estado de Cuenta</p>
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <p className="text-3xl font-black tracking-tighter">
+                        ${Math.max(
+                          customers.find(c => c.id === selectedCustomerId)?.balance || 0,
+                          customerOrders.reduce((sum, o) => sum + o.totalAmount, 0)
+                        ).toLocaleString()}
+                      </p>
+                      <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Saldo Total Pendiente</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-slate-300 tracking-tight">
+                        {customerOrders.length}
+                      </p>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase">Comandas</p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 gap-4">
                 <div className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl">

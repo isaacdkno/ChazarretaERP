@@ -183,6 +183,17 @@ const App: React.FC = () => {
     if (!isSupabaseConfigured()) return;
     setIsSynced(false);
     try {
+      // If status changed to DISPATCHED, increase customer balance
+      const oldOrder = orders.find(o => o.id === updatedOrder.id);
+      if (oldOrder && oldOrder.status !== OrderStatus.DISPATCHED && updatedOrder.status === OrderStatus.DISPATCHED) {
+        const customer = customers.find(c => c.id === updatedOrder.customerId);
+        if (customer) {
+          const newBalance = (customer.balance || 0) + updatedOrder.totalAmount;
+          await supabase.from('customers').update({ balance: newBalance }).eq('id', customer.id);
+          setCustomers(prev => prev.map(c => c.id === customer.id ? { ...c, balance: newBalance } : c));
+        }
+      }
+
       await supabase.from('orders').update({
         status: updatedOrder.status,
         signature_url: updatedOrder.signatureUrl,
