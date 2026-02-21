@@ -301,7 +301,7 @@ const App: React.FC = () => {
                   <Route path="/gate" element={<GateView gateEntries={gateEntries} setGateEntries={setGateEntries} customers={customers} products={products} />} />
                   <Route path="/center" element={<OrderCenterView orders={orders} updateOrder={updateOrder} addOrder={addOrder} products={products} customers={customers} />} />
                   <Route path="/factory" element={<FactoryView orders={orders} products={products} />} />
-                  <Route path="/dispatch" element={<DispatchView orders={orders} updateOrder={updateOrder} />} />
+                  <Route path="/dispatch" element={<DispatchView orders={orders} updateOrder={updateOrder} products={products} />} />
                   <Route path="/collection" element={<CollectionView orders={orders} updateOrder={updateOrder} customers={customers} setCustomers={setCustomers} />} />
                   {currentUser.role === UserRole.ADMIN && (
                     <Route path="/audit" element={<AdminDashboard logs={auditLogs} onRefresh={fetchData} dbReady={dbReady} orders={orders} />} />

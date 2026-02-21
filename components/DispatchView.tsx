@@ -1,14 +1,15 @@
 
 import React, { useState, useRef } from 'react';
 import { Truck, CheckCircle, Signature, RotateCcw } from 'lucide-react';
-import { Order, OrderStatus } from '../types';
+import { Order, OrderStatus, Product } from '../types';
 
 interface Props {
   orders: Order[];
   updateOrder: (order: Order) => void;
+  products: Product[];
 }
 
-const DispatchView: React.FC<Props> = ({ orders, updateOrder }) => {
+const DispatchView: React.FC<Props> = ({ orders, updateOrder, products }) => {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -101,12 +102,15 @@ const DispatchView: React.FC<Props> = ({ orders, updateOrder }) => {
             <div className="bg-slate-50 p-6 rounded-xl border border-slate-100">
               <p className="text-sm font-bold text-slate-400 uppercase mb-4">Detalle de Carga</p>
               <ul className="space-y-2">
-                {selectedOrder.items.map(item => (
-                  <li key={item.id} className="flex justify-between text-sm">
-                    <span className="text-slate-700 font-medium">Prod #{item.productId}</span>
-                    <span className="font-bold text-slate-900">{item.quantity} u. + {item.bonusQuantity} SC</span>
-                  </li>
-                ))}
+                {selectedOrder.items.map(item => {
+                  const product = products.find(p => p.id === item.productId);
+                  return (
+                    <li key={item.id} className="flex justify-between text-sm">
+                      <span className="text-slate-700 font-medium">{product?.name || `Prod #${item.productId}`}</span>
+                      <span className="font-bold text-slate-900">{item.quantity} u. + {item.bonusQuantity} SC</span>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
 
