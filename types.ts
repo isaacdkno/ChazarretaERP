@@ -95,3 +95,15 @@ export interface AuditLog {
   oldValue: string;
   newValue: string;
 }
+
+export interface PaymentReceipt {
+  id: string;
+  customerId: string;
+  customerName: string;
+  amount: number;
+  cashAmount: number;
+  transferAmount: number;
+  paymentMode: 'FIFO' | 'MANUAL';
+  orderIds: string[];
+  createdAt: string;
+}

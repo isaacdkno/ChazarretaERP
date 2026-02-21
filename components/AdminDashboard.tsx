@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Database, History, Terminal, Cloud, CheckCircle2, Copy, Play, AlertTriangle, Search, Activity, Server, Key, Link as LinkIcon, RefreshCw, Trash2, ExternalLink, Info, ShieldAlert } from 'lucide-react';
-import { AuditLog, Order } from '../types';
+import { ShieldCheck, Database, History, Terminal, Cloud, CheckCircle2, Copy, Play, AlertTriangle, Search, Activity, Server, Key, Link as LinkIcon, RefreshCw, Trash2, ExternalLink, Info, ShieldAlert, FileText, Printer } from 'lucide-react';
+import { AuditLog, Order, PaymentReceipt } from '../types';
 import { supabase, saveSupabaseConfig, clearSupabaseConfig, isSupabaseConfigured } from '../supabase';
 import { MOCK_PRODUCTS, MOCK_CUSTOMERS, MOCK_PRICE_LISTS } from '../constants';
 
@@ -13,12 +13,85 @@ interface Props {
 }
 
 const AdminDashboard: React.FC<Props> = ({ logs, onRefresh, dbReady, orders }) => {
-  const [activeTab, setActiveTab] = useState<'LOGS' | 'DATABASE'>('DATABASE');
+  const [activeTab, setActiveTab] = useState<'LOGS' | 'DATABASE' | 'RECEIPTS'>('DATABASE');
   const [isSeeding, setIsSeeding] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const [receipts, setReceipts] = useState<PaymentReceipt[]>([]);
+  const [loadingReceipts, setLoadingReceipts] = useState(false);
   
   const [configUrl, setConfigUrl] = useState(localStorage.getItem('supabase_url') || '');
   const [configKey, setConfigKey] = useState(localStorage.getItem('supabase_key') || '');
+
+  useEffect(() => {
+    if (activeTab === 'RECEIPTS') {
+      fetchReceipts();
+    }
+  }, [activeTab]);
+
+  const fetchReceipts = async () => {
+    setLoadingReceipts(true);
+    const { data, error } = await supabase
+      .from('payment_receipts')
+      .select('*')
+      .order('createdAt', { ascending: false });
+    
+    if (!error && data) {
+      setReceipts(data);
+    }
+    setLoadingReceipts(false);
+  };
+
+  const printThermalTicket = (receipt: PaymentReceipt) => {
+    const win = window.open('', '_blank', 'width=400,height=600');
+    if (!win) return;
+    const html = `
+      <html>
+        <head>
+          <style>
+            @page { margin: 0; }
+            body { font-family: 'Courier New', Courier, monospace; width: 80mm; padding: 5mm; font-size: 12px; line-height: 1.2; }
+            .center { text-align: center; }
+            .bold { font-weight: bold; }
+            .line { border-bottom: 1px dashed #000; margin: 5px 0; }
+            .flex { display: flex; justify-content: space-between; }
+            .title { font-size: 16px; margin-bottom: 5px; }
+          </style>
+        </head>
+        <body>
+          <div class="center bold title">CHAZARRETA ERP</div>
+          <div class="center">COMPROBANTE DE PAGO</div>
+          <div class="line"></div>
+          <div class="flex"><span>FECHA:</span> <span>${new Date(receipt.createdAt).toLocaleString()}</span></div>
+          <div class="flex"><span>RECIBO:</span> <span>#${receipt.id.toString().substr(0,8).toUpperCase()}</span></div>
+          <div class="line"></div>
+          <div class="bold">CLIENTE:</div>
+          <div>${receipt.customerName}</div>
+          <div class="line"></div>
+          <div class="bold">DETALLE DE PAGO:</div>
+          <div class="flex"><span>EFECTIVO:</span> <span>$${receipt.cashAmount.toLocaleString()}</span></div>
+          <div class="flex"><span>TRANSF:</span> <span>$${receipt.transferAmount.toLocaleString()}</span></div>
+          <div class="line"></div>
+          <div class="flex bold" style="font-size: 14px;"><span>TOTAL COBRADO:</span> <span>$${receipt.amount.toLocaleString()}</span></div>
+          <div class="line"></div>
+          <div class="bold">COMANDAS AFECTADAS:</div>
+          ${receipt.orderIds.map(id => {
+            const order = orders.find(o => o.id === id);
+            return `
+              <div class="flex">
+                <span>#ORD-${id.substr(0,6).toUpperCase()}</span>
+                <span>$${order?.totalAmount.toLocaleString() || '0'}</span>
+              </div>
+            `;
+          }).join('')}
+          <div class="line"></div>
+          <div class="center" style="margin-top: 20px;">GRACIAS POR SU PAGO<br></div>
+          <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 500); };</script>
+        </body>
+      </html>
+    `;
+    win.document.write(html);
+    win.document.close();
+  };
 
   const [connectionStats, setConnectionStats] = useState({
     client: false,
@@ -134,6 +207,7 @@ CREATE TABLE orders (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), customer_id 
 CREATE TABLE order_items (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), order_id UUID REFERENCES orders(id) ON DELETE CASCADE, product_id TEXT REFERENCES products(id), quantity INTEGER NOT NULL, bonus_quantity INTEGER DEFAULT 0, unit_price DECIMAL(12,2) NOT NULL);
 CREATE TABLE gate_entries (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), customer_id TEXT REFERENCES customers(id), product_name TEXT, quantity INTEGER, reason TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
 CREATE TABLE account_movements (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), customer_id TEXT REFERENCES customers(id), type TEXT, amount DECIMAL(12,2), description TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE payment_receipts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), customer_id TEXT REFERENCES customers(id), customer_name TEXT, amount DECIMAL(12,2), cash_amount DECIMAL(12,2), transfer_amount DECIMAL(12,2), payment_mode TEXT, order_ids TEXT[], created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
 
 INSERT INTO price_lists (id, name, description) VALUES ('l1', 'Distribuidores', 'Precio para canales de distribución externos'), ('l2', 'Supermercados', 'Grandes superficies y cadenas'), ('l3', 'Sucursales', 'Venta directa en locales propios');
 INSERT INTO products (id, name, brand, category, bonus_enabled) VALUES ('p1', 'Pan de Molde Blanco', 'La Fornarina', 'Panificados', true), ('p2', 'Pan de Molde Salvado', 'La Fornarina', 'Panificados', true), ('p3', 'Grisines Tradicionales', 'Villecco', 'Snacks', false), ('p4', 'Pepas de Membrillo', 'Villecco', 'Dulces', true);
@@ -148,6 +222,12 @@ INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1
           <p className="text-slate-500 font-medium">Configuración de infraestructura y datos cloud.</p>
         </div>
         <div className="flex bg-white p-1.5 rounded-[1.5rem] border border-slate-200 shadow-sm">
+          <button 
+            onClick={() => setActiveTab('RECEIPTS')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'RECEIPTS' ? 'bg-slate-900 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}
+          >
+            <FileText size={16} /> Recibos
+          </button>
           <button 
             onClick={() => setActiveTab('LOGS')}
             className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'LOGS' ? 'bg-slate-900 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}
@@ -274,6 +354,47 @@ INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1
                  Nunca compartas tu <b>Service Role Key</b>. Usa siempre la <b>Anon Key</b> para el frontend. Si necesitas que el sistema sea accesible por varios usuarios sin configurar nada, pídeme "Hardcodear las llaves en el código".
                </p>
             </div>
+          </div>
+        </div>
+      ) : activeTab === 'RECEIPTS' ? (
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden animate-in slide-in-from-bottom-4">
+          <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+            <h2 className="font-black text-slate-800 uppercase tracking-tight text-lg flex items-center gap-2">
+              <FileText className="text-blue-500" size={20} /> Registro Maestro de Recibos
+            </h2>
+            <button onClick={fetchReceipts} className="p-2 hover:bg-slate-200 rounded-lg transition-all"><RefreshCw size={16} className={loadingReceipts ? 'animate-spin' : ''} /></button>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {receipts.length === 0 ? (
+              <div className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">
+                No se registran cobros en el sistema
+              </div>
+            ) : receipts.map(receipt => (
+              <div key={receipt.id} className="px-8 py-6 flex flex-col md:flex-row md:items-center justify-between hover:bg-slate-50/50 transition-all gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
+                    <Printer size={24} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Recibo #{receipt.id.toString().substr(0,8).toUpperCase()}</p>
+                    <p className="font-black text-slate-800 uppercase text-sm">{receipt.customerName}</p>
+                    <p className="text-[10px] text-slate-300 font-bold uppercase">{new Date(receipt.createdAt).toLocaleString()}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-8">
+                  <div className="text-right">
+                    <p className="text-2xl font-black text-slate-900 tracking-tighter">${receipt.amount.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Total Cobrado</p>
+                  </div>
+                  <button 
+                    onClick={() => printThermalTicket(receipt)}
+                    className="p-3 bg-slate-900 text-white rounded-xl hover:bg-blue-600 transition-all shadow-lg"
+                  >
+                    <Printer size={18} />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       ) : (

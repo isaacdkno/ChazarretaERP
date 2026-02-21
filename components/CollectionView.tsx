@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   BadgeDollarSign, 
   Wallet, 
@@ -9,9 +9,13 @@ import {
   CheckCircle2, 
   Banknote, 
   ArrowRightLeft,
-  Calculator
+  Calculator,
+  Printer,
+  CheckSquare,
+  Square,
+  FileText
 } from 'lucide-react';
-import { Order, OrderStatus, Customer } from '../types';
+import { Order, OrderStatus, Customer, PaymentReceipt } from '../types';
 import { supabase } from '../supabase';
 
 interface Props {
@@ -26,20 +30,28 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [transferAmount, setTransferAmount] = useState<number>(0);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [processing, setProcessing] = useState(false);
+  const [lastReceipt, setLastReceipt] = useState<PaymentReceipt | null>(null);
 
   const totalCollected = cashAmount + transferAmount;
 
-  const pendingCollection = orders.filter(o => 
-    o.status === OrderStatus.DISPATCHED || o.status === OrderStatus.PAID_PARTIAL
-  );
+  const customerOrders = orders.filter(o => 
+    o.customerId === selectedCustomerId && 
+    (o.status === OrderStatus.DISPATCHED || o.status === OrderStatus.PAID_PARTIAL)
+  ).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-  const toggleBlock = async (customer: Customer) => {
-    const nextState = !customer.isBlocked;
-    const { error } = await supabase.from('customers').update({ is_blocked: nextState }).eq('id', customer.id);
-    if (!error) {
-      setCustomers(prev => prev.map(c => c.id === customer.id ? { ...c, isBlocked: nextState } : c));
-    }
+  // Reset selection when customer changes
+  useEffect(() => {
+    setSelectedOrderIds([]);
+    setLastReceipt(null);
+  }, [selectedCustomerId]);
+
+  const toggleOrderSelection = (orderId: string) => {
+    if (paymentMode === 'FIFO') return;
+    setSelectedOrderIds(prev => 
+      prev.includes(orderId) ? prev.filter(id => id !== orderId) : [...prev, orderId]
+    );
   };
 
   const handlePayment = async () => {
@@ -49,39 +61,165 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
     const customer = customers.find(c => c.id === selectedCustomerId);
     if (!customer) return;
 
-    const newBalance = Math.max(0, customer.balance - totalCollected);
+    let ordersToPay: string[] = [];
+    let remainingAmount = totalCollected;
+
+    if (paymentMode === 'FIFO') {
+      // FIFO Logic: Apply to oldest orders first
+      for (const order of customerOrders) {
+        if (remainingAmount <= 0) break;
+        ordersToPay.push(order.id);
+        remainingAmount -= order.totalAmount;
+      }
+    } else {
+      // Manual Logic: Only selected orders
+      ordersToPay = selectedOrderIds;
+    }
 
     try {
-      // 1. Actualizar balance en Supabase
-      const { error } = await supabase
+      const newBalance = Math.max(0, customer.balance - totalCollected);
+      
+      // 1. Update balance
+      const { error: balanceError } = await supabase
         .from('customers')
         .update({ balance: newBalance })
         .eq('id', selectedCustomerId);
+      if (balanceError) throw balanceError;
 
-      if (error) throw error;
-
-      // 2. Registrar movimiento (opcional si hay tabla account_movements)
-      await supabase.from('account_movements').insert([{
-        customer_id: selectedCustomerId,
-        type: 'CREDIT',
+      // 2. Create Receipt
+      const receipt: Omit<PaymentReceipt, 'id'> = {
+        customerId: selectedCustomerId,
+        customerName: customer.name,
         amount: totalCollected,
-        description: `Cobro Multimodal: Cash $${cashAmount} + Transf $${transferAmount}`
-      }]);
+        cashAmount,
+        transferAmount,
+        paymentMode,
+        orderIds: ordersToPay,
+        createdAt: new Date().toISOString()
+      };
 
-      // 3. Actualizar localmente
+      const { data: receiptData, error: receiptError } = await supabase
+        .from('payment_receipts')
+        .insert([receipt])
+        .select()
+        .single();
+      
+      if (receiptError) {
+        console.warn("Table payment_receipts might not exist, falling back to local state only.");
+      }
+
+      // 3. Update Orders Status with Partial Payment Logic
+      let currentPaymentPool = totalCollected;
+      
+      // We sort orders by date to ensure consistent application in FIFO
+      const sortedOrdersToProcess = customerOrders.filter(o => ordersToPay.includes(o.id));
+
+      for (const order of sortedOrdersToProcess) {
+        if (currentPaymentPool <= 0) break;
+
+        const orderTotal = order.totalAmount;
+        let nextStatus: OrderStatus = order.status;
+
+        if (currentPaymentPool >= orderTotal) {
+          // Covers the whole order
+          nextStatus = OrderStatus.PAID_FULL;
+          currentPaymentPool -= orderTotal;
+        } else {
+          // Partial payment
+          nextStatus = OrderStatus.PAID_PARTIAL;
+          currentPaymentPool = 0; // Pool exhausted
+        }
+
+        updateOrder({ ...order, status: nextStatus });
+      }
+
+      // 4. Update local customers
       setCustomers(prev => prev.map(c => 
         c.id === selectedCustomerId ? { ...c, balance: newBalance } : c
       ));
 
+      const finalReceipt = receiptData || { ...receipt, id: 'TEMP-' + Math.random() };
+      setLastReceipt(finalReceipt);
+      
       setCashAmount(0);
       setTransferAmount(0);
-      alert(`Pago de $${totalCollected.toLocaleString()} registrado correctamente en Supabase.`);
+      setSelectedOrderIds([]);
+      
     } catch (err) {
       console.error(err);
-      alert("Error al procesar el cobro.");
+      alert("Error al procesar el cobro. Verifique la conexión.");
     } finally {
       setProcessing(false);
     }
+  };
+
+  const printThermalTicket = (receipt: PaymentReceipt) => {
+    const win = window.open('', '_blank', 'width=400,height=600');
+    if (!win) return;
+
+    const html = `
+      <html>
+        <head>
+          <style>
+            @page { margin: 0; }
+            body { 
+              font-family: 'Courier New', Courier, monospace; 
+              width: 80mm; 
+              padding: 5mm; 
+              font-size: 12px;
+              line-height: 1.2;
+            }
+            .center { text-align: center; }
+            .bold { font-weight: bold; }
+            .line { border-bottom: 1px dashed #000; margin: 5px 0; }
+            .flex { display: flex; justify-content: space-between; }
+            .title { font-size: 16px; margin-bottom: 5px; }
+          </style>
+        </head>
+        <body>
+          <div class="center bold title">CHAZARRETA ERP</div>
+          <div class="center">COMPROBANTE DE PAGO</div>
+          <div class="line"></div>
+          <div class="flex"><span>FECHA:</span> <span>${new Date(receipt.createdAt).toLocaleString()}</span></div>
+          <div class="flex"><span>RECIBO:</span> <span>#${receipt.id.toString().substr(0,8).toUpperCase()}</span></div>
+          <div class="line"></div>
+          <div class="bold">CLIENTE:</div>
+          <div>${receipt.customerName}</div>
+          <div class="line"></div>
+          <div class="bold">DETALLE DE PAGO:</div>
+          <div class="flex"><span>EFECTIVO:</span> <span>$${receipt.cashAmount.toLocaleString()}</span></div>
+          <div class="flex"><span>TRANSF:</span> <span>$${receipt.transferAmount.toLocaleString()}</span></div>
+          <div class="line"></div>
+          <div class="flex bold" style="font-size: 14px;">
+            <span>TOTAL COBRADO:</span> 
+            <span>$${receipt.amount.toLocaleString()}</span>
+          </div>
+          <div class="line"></div>
+          <div class="bold">COMANDAS AFECTADAS:</div>
+          ${receipt.orderIds.map(id => {
+            const order = orders.find(o => o.id === id);
+            return `
+              <div class="flex">
+                <span>#ORD-${id.substr(0,6).toUpperCase()}</span>
+                <span>$${order?.totalAmount.toLocaleString() || '0'}</span>
+              </div>
+            `;
+          }).join('')}
+          <div class="line"></div>
+          <div class="center" style="margin-top: 20px;">
+            GRACIAS POR SU PAGO<br>
+          </div>
+          <script>
+            window.onload = () => {
+              window.print();
+              setTimeout(() => window.close(), 500);
+            };
+          </script>
+        </body>
+      </html>
+    `;
+    win.document.write(html);
+    win.document.close();
   };
 
   return (
@@ -90,6 +228,21 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Oficina de Cobranzas</h1>
           <p className="text-slate-500 font-medium">Gestión de créditos y conciliación real con Supabase.</p>
+        </div>
+        
+        <div className="flex bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm">
+          <button 
+            onClick={() => setPaymentMode('FIFO')}
+            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentMode === 'FIFO' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            Método FIFO
+          </button>
+          <button 
+            onClick={() => setPaymentMode('MANUAL')}
+            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentMode === 'MANUAL' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            Selección Manual
+          </button>
         </div>
       </header>
 
@@ -151,31 +304,83 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
 
               <button 
                 onClick={handlePayment}
-                disabled={!selectedCustomerId || totalCollected <= 0 || processing}
+                disabled={!selectedCustomerId || totalCollected <= 0 || processing || (paymentMode === 'MANUAL' && selectedOrderIds.length === 0)}
                 className="w-full py-5 bg-blue-600 text-white font-black uppercase tracking-[0.2em] text-xs rounded-2xl shadow-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-3 disabled:opacity-20"
               >
                 {processing ? "Procesando..." : <CheckCircle2 size={20} />} Confirmar Imputación
               </button>
             </div>
           </div>
+
+          {lastReceipt && (
+            <div className="bg-emerald-600 p-6 rounded-[2.5rem] text-white animate-in zoom-in-95">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Cobro Exitoso</p>
+                <CheckCircle2 size={20} />
+              </div>
+              <p className="text-xs font-bold mb-6">Se ha generado el comprobante #${lastReceipt.id.toString().substr(0,8).toUpperCase()}</p>
+              <button 
+                onClick={() => printThermalTicket(lastReceipt)}
+                className="w-full py-4 bg-white text-emerald-600 font-black uppercase tracking-widest text-[10px] rounded-xl flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all"
+              >
+                <Printer size={16} /> Imprimir Ticket 80mm
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-8">
           <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
             <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <h2 className="font-black text-slate-800 uppercase tracking-tight text-lg flex items-center gap-2">
-                <History className="text-slate-400" size={20} /> Comandas Pendientes de Cobro
+                <History className="text-slate-400" size={20} /> 
+                {paymentMode === 'FIFO' ? 'Comandas Pendientes (Orden FIFO)' : 'Seleccionar Comandas a Cobrar'}
               </h2>
+              {paymentMode === 'MANUAL' && (
+                <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase">
+                  {selectedOrderIds.length} Seleccionadas
+                </span>
+              )}
             </div>
             <div className="divide-y divide-slate-100">
-              {pendingCollection.map(order => (
-                <div key={order.id} className="px-8 py-6 flex flex-col md:flex-row md:items-center justify-between hover:bg-slate-50/50 transition-all gap-4">
-                  <div>
-                    <p className="font-black text-slate-800 uppercase text-lg tracking-tight leading-none mb-1">{order.customerName}</p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">#ORD-{order.id.toString().substr(0,6).toUpperCase()}</p>
+              {!selectedCustomerId ? (
+                <div className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">
+                  Seleccione un cliente para ver sus deudas
+                </div>
+              ) : customerOrders.length === 0 ? (
+                <div className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">
+                  El cliente no tiene deudas pendientes
+                </div>
+              ) : customerOrders.map((order, index) => (
+                <div 
+                  key={order.id} 
+                  onClick={() => toggleOrderSelection(order.id)}
+                  className={`px-8 py-6 flex flex-col md:flex-row md:items-center justify-between transition-all gap-4 cursor-pointer ${
+                    paymentMode === 'MANUAL' 
+                      ? (selectedOrderIds.includes(order.id) ? 'bg-blue-50/50 border-l-4 border-blue-500' : 'hover:bg-slate-50/50')
+                      : (index === 0 ? 'bg-amber-50/30 border-l-4 border-amber-500' : 'hover:bg-slate-50/50')
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    {paymentMode === 'MANUAL' && (
+                      selectedOrderIds.includes(order.id) ? <CheckSquare className="text-blue-600" size={20} /> : <Square className="text-slate-300" size={20} />
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-black text-slate-800 uppercase text-lg tracking-tight leading-none">{order.customerName}</p>
+                        {paymentMode === 'FIFO' && index === 0 && (
+                          <span className="text-[8px] font-black bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full uppercase">Próxima a Cobrar</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">#ORD-{order.id.toString().substr(0,6).toUpperCase()}</p>
+                        <p className="text-[10px] text-slate-300 font-bold uppercase">{new Date(order.createdAt).toLocaleDateString()}</p>
+                      </div>
+                    </div>
                   </div>
                   <div className="text-right">
                     <p className="text-2xl font-black text-slate-900 tracking-tighter">${order.totalAmount.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Saldo de Comanda</p>
                   </div>
                 </div>
               ))}
