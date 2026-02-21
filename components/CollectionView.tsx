@@ -339,9 +339,31 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
                 {paymentMode === 'FIFO' ? 'Comandas Pendientes (Orden FIFO)' : 'Seleccionar Comandas a Cobrar'}
               </h2>
               {paymentMode === 'MANUAL' && (
-                <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase">
-                  {selectedOrderIds.length} Seleccionadas
-                </span>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Total Seleccionado</p>
+                    <div className="flex items-center gap-2 justify-end">
+                      <p className="text-lg font-black text-blue-600 tracking-tighter leading-none">
+                        ${orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + o.totalAmount, 0).toLocaleString()}
+                      </p>
+                      {totalCollected > 0 && (
+                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${
+                          orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + o.totalAmount, 0) > totalCollected 
+                            ? 'bg-red-100 text-red-600' 
+                            : 'bg-emerald-100 text-emerald-600'
+                        }`}>
+                          {orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + o.totalAmount, 0) > totalCollected 
+                            ? `Exceso: $${(orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + o.totalAmount, 0) - totalCollected).toLocaleString()}`
+                            : `Restante: $${(totalCollected - orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + o.totalAmount, 0)).toLocaleString()}`
+                          }
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase">
+                    {selectedOrderIds.length} Seleccionadas
+                  </span>
+                </div>
               )}
             </div>
             <div className="divide-y divide-slate-100">
