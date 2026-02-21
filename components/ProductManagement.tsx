@@ -46,9 +46,11 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
     try {
       const productData = {
         name: editProduct.name,
-        brand: editProduct.brand,
+        brand: editProduct.brand || 'La Fornarina',
         category: editProduct.category || 'General',
-        bonus_enabled: editProduct.bonusEnabled ?? true
+        bonus_enabled: editProduct.bonusEnabled ?? true,
+        bonus_threshold: editProduct.bonusThreshold || 20,
+        bonus_percentage: editProduct.bonusPercentage || 10
       };
 
       if (isEditing) {
@@ -274,38 +276,71 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Marca</label>
-                  <input 
-                    type="text"
+                  <select 
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10"
-                    value={editProduct.brand || ''}
-                    onChange={e => setEditProduct({...editProduct, brand: e.target.value})}
-                    placeholder="Ej: La Fornarina"
-                  />
+                    value={editProduct.brand || 'La Fornarina'}
+                    onChange={e => setEditProduct({...editProduct, brand: e.target.value as any})}
+                  >
+                    <option value="La Fornarina">La Fornarina</option>
+                    <option value="Villecco">Villecco</option>
+                  </select>
                 </div>
               </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Categoría</label>
-                <select 
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10"
-                  value={editProduct.category || 'Panificados'}
-                  onChange={e => setEditProduct({...editProduct, category: e.target.value})}
-                >
-                  <option value="Panificados">Panificados</option>
-                  <option value="Snacks">Snacks</option>
-                  <option value="Dulces">Dulces</option>
-                  <option value="General">General</option>
-                </select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Categoría</label>
+                  <select 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10"
+                    value={editProduct.category || 'Panificados'}
+                    onChange={e => setEditProduct({...editProduct, category: e.target.value})}
+                  >
+                    <option value="Panificados">Panificados</option>
+                    <option value="Snacks">Snacks</option>
+                    <option value="Dulces">Dulces</option>
+                    <option value="Hamburguesas">Hamburguesas</option>
+                    <option value="General">General</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-2xl border border-blue-100 self-end">
+                  <input 
+                    type="checkbox"
+                    id="bonus"
+                    className="w-5 h-5 rounded-lg text-blue-600 focus:ring-blue-500"
+                    checked={editProduct.bonusEnabled ?? true}
+                    onChange={e => setEditProduct({...editProduct, bonusEnabled: e.target.checked})}
+                  />
+                  <label htmlFor="bonus" className="text-xs font-bold text-blue-800">Bonificación Activa</label>
+                </div>
               </div>
-              <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-2xl border border-blue-100">
-                <input 
-                  type="checkbox"
-                  id="bonus"
-                  className="w-5 h-5 rounded-lg text-blue-600 focus:ring-blue-500"
-                  checked={editProduct.bonusEnabled ?? true}
-                  onChange={e => setEditProduct({...editProduct, bonusEnabled: e.target.checked})}
-                />
-                <label htmlFor="bonus" className="text-xs font-bold text-blue-800">Habilitar Bonificación Automática (10+1)</label>
-              </div>
+
+              {editProduct.bonusEnabled && (
+                <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 space-y-4">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Configuración de Regalo (Ej: 10+1)</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 uppercase mb-1 block">Mínimo para Regalo</label>
+                      <input 
+                        type="number"
+                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-700"
+                        value={editProduct.bonusThreshold || 20}
+                        onChange={e => setEditProduct({...editProduct, bonusThreshold: parseInt(e.target.value)})}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 uppercase mb-1 block">% de Regalo</label>
+                      <div className="relative">
+                        <input 
+                          type="number"
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-700"
+                          value={editProduct.bonusPercentage || 10}
+                          onChange={e => setEditProduct({...editProduct, bonusPercentage: parseInt(e.target.value)})}
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 font-bold text-slate-400">%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="p-8 bg-slate-50 flex gap-3">
               <button 
