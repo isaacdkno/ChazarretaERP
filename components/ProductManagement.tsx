@@ -29,25 +29,35 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
   const [activeTab, setActiveTab] = useState<'PRODUCTS' | 'PRICE_LISTS'>('PRODUCTS');
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedBrand, setSelectedBrand] = useState<'TODAS' | 'La Fornarina' | 'Villecco'>('TODAS');
   const [loading, setLoading] = useState(false);
 
   // Form states for new/edit product
   const [editProduct, setEditProduct] = useState<Partial<Product>>({});
   const [showNewForm, setShowNewForm] = useState(false);
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.brand.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                         p.brand.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesBrand = selectedBrand === 'TODAS' || p.brand === selectedBrand;
+    return matchesSearch && matchesBrand;
+  });
 
   const handleSaveProduct = async () => {
-    if (!editProduct.name || !editProduct.brand) return;
+    const name = editProduct.name?.trim();
+    const brand = editProduct.brand || 'La Fornarina';
+    
+    if (!name) {
+      alert("El nombre del producto es obligatorio");
+      return;
+    }
+
     setLoading(true);
     try {
       const productData = {
-        name: editProduct.name,
-        brand: editProduct.brand || 'La Fornarina',
-        category: editProduct.category || 'General',
+        name: name,
+        brand: brand,
+        category: editProduct.category || 'Panificados',
         bonus_enabled: editProduct.bonusEnabled ?? true,
         bonus_threshold: editProduct.bonusThreshold || 20,
         bonus_percentage: editProduct.bonusPercentage || 10
@@ -87,9 +97,7 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
   const handleUpdatePrice = async (productId: string, listId: string, price: number) => {
     try {
       await supabase.from('product_prices')
-        .upsert({ product_id: productId, price_list_id: listId, price })
-        .eq('product_id', productId)
-        .eq('price_list_id', listId);
+        .upsert({ product_id: productId, price_list_id: listId, price });
       onRefresh();
     } catch (error) {
       console.error(error);
@@ -125,23 +133,51 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
           {/* Listado de Productos */}
           <div className="lg:col-span-8 space-y-6">
             <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    type="text"
-                    placeholder="Buscar por nombre o marca..."
-                    className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 font-bold text-slate-700 transition-all"
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                  />
+              <div className="p-6 border-b border-slate-100 bg-slate-50/50 space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                      type="text"
+                      placeholder="Buscar por nombre..."
+                      className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 font-bold text-slate-700 transition-all"
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setIsEditing(null);
+                      setEditProduct({
+                        category: 'Panificados',
+                        brand: 'La Fornarina',
+                        bonusEnabled: true,
+                        bonusThreshold: 20,
+                        bonusPercentage: 10
+                      });
+                      setShowNewForm(true);
+                    }}
+                    className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] flex items-center gap-2 hover:bg-blue-600 transition-all shadow-lg"
+                  >
+                    <Plus size={16} /> Nuevo Producto
+                  </button>
                 </div>
-                <button 
-                  onClick={() => setShowNewForm(true)}
-                  className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] flex items-center gap-2 hover:bg-blue-600 transition-all shadow-lg"
-                >
-                  <Plus size={16} /> Nuevo Producto
-                </button>
+
+                <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-xl w-fit">
+                  {(['TODAS', 'La Fornarina', 'Villecco'] as const).map(brand => (
+                    <button
+                      key={brand}
+                      onClick={() => setSelectedBrand(brand)}
+                      className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                        selectedBrand === brand 
+                          ? 'bg-white text-blue-600 shadow-sm' 
+                          : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      {brand}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="divide-y divide-slate-100">

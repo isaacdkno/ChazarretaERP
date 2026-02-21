@@ -114,6 +114,8 @@ const App: React.FC = () => {
             brand: p.brand as 'La Fornarina' | 'Villecco',
             category: p.category,
             bonusEnabled: p.bonus_enabled,
+            bonusThreshold: p.bonus_threshold,
+            bonusPercentage: p.bonus_percentage,
             prices: productPrices
           };
         });
