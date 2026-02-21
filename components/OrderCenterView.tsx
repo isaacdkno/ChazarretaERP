@@ -327,7 +327,10 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
                           const p = products.find(prod => prod.id === pid)!;
                           return (
                             <div key={pid} className="flex justify-between items-center text-sm font-bold">
-                               <p className="text-slate-800 truncate max-w-[140px] uppercase">{p.name}</p>
+                               <p className="text-slate-800 truncate max-w-[140px] uppercase">
+                                 <span className="text-blue-600 mr-2">{qty}x</span>
+                                 {p.name}
+                               </p>
                                <p className="text-slate-900">${(Number(qty) * (p.prices?.[customers.find(c => c.id === selectedCustomerId)?.priceListId || 'l1'] || 0)).toLocaleString()}</p>
                             </div>
                           );
