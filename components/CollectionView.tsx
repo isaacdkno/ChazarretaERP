@@ -36,10 +36,12 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
 
   const totalCollected = cashAmount + transferAmount;
 
-  const customerOrders = orders.filter(o => 
-    o.customerId === selectedCustomerId && 
-    (o.status === OrderStatus.DISPATCHED || o.status === OrderStatus.PAID_PARTIAL)
-  ).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const customerOrders = orders.filter(o => {
+    const customer = customers.find(c => c.id === selectedCustomerId);
+    return o.customerId === selectedCustomerId && 
+           o.customerName.toLowerCase() === customer?.name.toLowerCase() &&
+           (o.status === OrderStatus.DISPATCHED || o.status === OrderStatus.PAID_PARTIAL || o.status === OrderStatus.VALIDATED);
+  }).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   // Reset selection when customer changes
   useEffect(() => {

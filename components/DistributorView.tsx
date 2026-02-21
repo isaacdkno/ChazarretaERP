@@ -150,8 +150,9 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products, curre
 
   const calculateTotals = () => {
     // Intentamos buscar un cliente que coincida con el nombre del usuario
-    // Si no existe, usamos el primero de la lista como fallback
-    const customer = customers.find(c => c.name.toLowerCase() === currentUser.name.toLowerCase()) || customers[0];
+    const customer = customers.find(c => c.name.toLowerCase() === currentUser.name.toLowerCase());
+    
+    // Si no existe el cliente, usamos 'unknown' como ID para evitar contaminar otros clientes
     const priceListId = customer?.priceListId || 'l1';
     let subtotal = 0;
     let bonusCount = 0;
