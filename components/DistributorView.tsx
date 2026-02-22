@@ -20,7 +20,8 @@ import {
   BadgeDollarSign,
   ArrowUpRight,
   ArrowDownLeft,
-  RotateCcw
+  RotateCcw,
+  AlertCircle
 } from 'lucide-react';
 import { Product, Customer, Order, OrderStatus, OrderItem, UserRole, PaymentReceipt, GateEntry } from '../types';
 import { supabase } from '../supabase';
@@ -111,7 +112,7 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products, order
           </div>
           <div class="line"></div>
           <div class="bold">COMANDAS AFECTADAS:</div>
-          ${receipt.orderIds.map(id => `<div>- #ORD-${id.substr(0,6).toUpperCase()}</div>`).join('')}
+          ${(receipt.orderIds || []).map(id => `<div>- #ORD-${id.substr(0,6).toUpperCase()}</div>`).join('')}
           <div class="line"></div>
           <div class="center" style="margin-top: 20px;">
             GRACIAS POR SU PAGO<br>
@@ -172,7 +173,17 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products, order
     
     const items: OrderItem[] = Object.keys(cart).map((id) => {
       const qty = cart[id];
-      const product = products.find(p => p.id === id)!;
+      const product = products.find(p => p.id === id);
+      
+      if (!product) {
+        return {
+          id: Math.random().toString(36).substr(2, 9),
+          productId: id,
+          quantity: qty,
+          bonusQuantity: 0,
+          unitPrice: 0
+        };
+      }
       
       let bonusQty = 0;
       if (product.bonusEnabled) {
@@ -226,6 +237,13 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products, order
           <p className="text-slate-500 font-medium">Hola <span className="text-blue-600 font-bold">{currentUser.name}</span>, gestione sus pedidos y pagos.</p>
         </div>
         
+        {!myCustomer && (
+          <div className="bg-amber-50 border border-amber-200 px-6 py-3 rounded-2xl flex items-center gap-3 text-amber-700 animate-pulse">
+            <AlertCircle size={20} />
+            <p className="text-xs font-bold uppercase tracking-tight">Atención: No se encontró una cuenta vinculada a su nombre de usuario.</p>
+          </div>
+        )}
+        
         <div className="flex bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto no-scrollbar">
           <button 
             onClick={() => setActiveTab('DASHBOARD')}
@@ -269,7 +287,7 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products, order
               </div>
               <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Saldo Actual</p>
               <h3 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">
-                ${myCustomer?.balance.toLocaleString() || '0'}
+                ${myCustomer?.balance?.toLocaleString() || '0'}
               </h3>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Cuenta Corriente</p>
             </div>

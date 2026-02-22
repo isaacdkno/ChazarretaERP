@@ -320,7 +320,11 @@ const App: React.FC = () => {
             )}
 
             <Routes>
-              <Route path="/" element={<HomeDashboard role={currentUser.role} orders={displayOrders} customers={displayCustomers} isSynced={isSynced} dbReady={dbReady} />} />
+              <Route path="/" element={
+                currentUser.role === UserRole.DISTRIBUTOR 
+                  ? <Navigate to="/new-order" replace /> 
+                  : <HomeDashboard role={currentUser.role} orders={displayOrders} customers={displayCustomers} isSynced={isSynced} dbReady={dbReady} />
+              } />
               <Route path="/orders" element={<OrdersTable orders={displayOrders} role={currentUser.role} />} />
               
               {currentUser.role === UserRole.ADMIN && (
@@ -328,7 +332,7 @@ const App: React.FC = () => {
               )}
 
               {(currentUser.role === UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && (
-                <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={products} currentUser={currentUser} />} />
+                <Route path="/new-order" element={<DistributorView addOrder={addOrder} customers={customers} products={products} orders={orders} gateEntries={gateEntries} currentUser={currentUser} />} />
               )}
 
               {(currentUser.role !== UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && (
