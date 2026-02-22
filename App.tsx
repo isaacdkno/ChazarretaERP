@@ -334,9 +334,9 @@ const App: React.FC = () => {
               {(currentUser.role !== UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && (
                 <>
                   <Route path="/gate" element={<GateView gateEntries={gateEntries} setGateEntries={setGateEntries} customers={customers} products={products} />} />
-                  <Route path="/center" element={<OrderCenterView orders={orders} updateOrder={updateOrder} addOrder={addOrder} products={products} customers={customers} />} />
-                  <Route path="/factory" element={<FactoryView orders={orders} products={products} />} />
-                  <Route path="/dispatch" element={<DispatchView orders={orders} updateOrder={updateOrder} products={products} />} />
+                  <Route path="/center" element={<OrderCenterView orders={orders} updateOrder={updateOrder} addOrder={addOrder} products={products} customers={customers} gateEntries={gateEntries} setGateEntries={setGateEntries} />} />
+                  <Route path="/factory" element={<FactoryView orders={orders} products={products} gateEntries={gateEntries} />} />
+                  <Route path="/dispatch" element={<DispatchView orders={orders} updateOrder={updateOrder} products={products} gateEntries={gateEntries} setGateEntries={setGateEntries} />} />
                   <Route path="/collection" element={<CollectionView orders={orders} updateOrder={updateOrder} customers={customers} setCustomers={setCustomers} />} />
                   {currentUser.role === UserRole.ADMIN && (
                     <Route path="/audit" element={<AdminDashboard logs={auditLogs} onRefresh={fetchData} dbReady={dbReady} orders={orders} />} />

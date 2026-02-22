@@ -14,9 +14,10 @@ import {
   CheckCircle2,
   Zap,
   Minus,
-  Plus
+  Plus,
+  Truck
 } from 'lucide-react';
-import { Order, OrderStatus, Product, Customer, OrderItem } from '../types';
+import { Order, OrderStatus, Product, Customer, OrderItem, GateEntry } from '../types';
 
 interface Props {
   orders: Order[];
@@ -24,10 +25,12 @@ interface Props {
   addOrder: (order: Order) => void;
   products: Product[];
   customers: Customer[];
+  gateEntries: GateEntry[];
+  setGateEntries: React.Dispatch<React.SetStateAction<GateEntry[]>>;
 }
 
-const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, products, customers }) => {
-  const [activeTab, setActiveTab] = useState<'VALIDATE' | 'PRODUCTS' | 'BONUS' | 'PRICES'>('VALIDATE');
+const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, products, customers, gateEntries, setGateEntries }) => {
+  const [activeTab, setActiveTab] = useState<'VALIDATE' | 'PRODUCTS' | 'BONUS' | 'PRICES' | 'GATE_VALIDATE'>('VALIDATE');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'VALIDATED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [productSearchQuery, setProductSearchQuery] = useState('');
@@ -159,6 +162,7 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
             { id: 'PRODUCTS', label: 'Catálogo', icon: <Package size={18} /> },
             { id: 'PRICES', label: 'Tarifas', icon: <DollarSign size={18} /> },
             { id: 'BONUS', label: 'Bonificaciones', icon: <Percent size={18} /> },
+            { id: 'GATE_VALIDATE', label: 'Cambios (Portería)', icon: <Truck size={18} /> },
           ].map(tab => (
             <button 
               key={tab.id}
@@ -259,6 +263,47 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'GATE_VALIDATE' && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
+            <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50">
+              <h2 className="font-black text-slate-800 uppercase tracking-tight text-lg">Validación de Cambios / Devoluciones</h2>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {gateEntries.filter(e => e.status === 'PENDING').length === 0 ? (
+                <div className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">No hay ingresos de portería pendientes</div>
+              ) : gateEntries.filter(e => e.status === 'PENDING').map(entry => (
+                <div key={entry.id} className="p-8 hover:bg-slate-50 transition-all">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div>
+                      <p className="text-xl font-black text-slate-800 uppercase tracking-tight mb-1">{entry.customerName}</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Registrado: {new Date(entry.createdAt).toLocaleString()}</p>
+                      <div className="mt-4 space-y-2">
+                        {entry.items.map(item => (
+                          <div key={item.id} className="flex items-center gap-2 text-sm font-bold text-slate-600">
+                            <span className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-xs">{item.quantity}</span>
+                            <span className="uppercase">{item.productName}</span>
+                            <span className="text-[10px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-md uppercase">{item.reason}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setGateEntries(prev => prev.map(e => e.id === entry.id ? { ...e, status: 'CONVERTED' } : e));
+                      }}
+                      className="px-8 py-4 bg-emerald-600 text-white font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl hover:bg-emerald-700 transition-all flex items-center gap-2"
+                    >
+                      <CheckCircle2 size={18} /> Validar Cambio
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

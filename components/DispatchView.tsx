@@ -1,20 +1,24 @@
 
 import React, { useState, useRef } from 'react';
 import { Truck, CheckCircle, Signature, RotateCcw } from 'lucide-react';
-import { Order, OrderStatus, Product } from '../types';
+import { Order, OrderStatus, Product, GateEntry } from '../types';
 
 interface Props {
   orders: Order[];
   updateOrder: (order: Order) => void;
   products: Product[];
+  gateEntries: GateEntry[];
+  setGateEntries: React.Dispatch<React.SetStateAction<GateEntry[]>>;
 }
 
-const DispatchView: React.FC<Props> = ({ orders, updateOrder, products }) => {
+const DispatchView: React.FC<Props> = ({ orders, updateOrder, products, gateEntries, setGateEntries }) => {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedGateEntry, setSelectedGateEntry] = useState<GateEntry | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
   const readyOrders = orders.filter(o => o.status === OrderStatus.VALIDATED);
+  const readyGateEntries = gateEntries.filter(e => e.status === 'CONVERTED');
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     setIsDrawing(true);
@@ -53,14 +57,19 @@ const DispatchView: React.FC<Props> = ({ orders, updateOrder, products }) => {
   };
 
   const confirmDelivery = () => {
-    if (!selectedOrder || !canvasRef.current) return;
-    const signatureUrl = canvasRef.current.toDataURL();
-    updateOrder({ 
-      ...selectedOrder, 
-      status: OrderStatus.DISPATCHED,
-      signatureUrl 
-    });
-    setSelectedOrder(null);
+    if (selectedOrder && canvasRef.current) {
+      const signatureUrl = canvasRef.current.toDataURL();
+      updateOrder({ 
+        ...selectedOrder, 
+        status: OrderStatus.DISPATCHED,
+        signatureUrl 
+      });
+      setSelectedOrder(null);
+    } else if (selectedGateEntry && canvasRef.current) {
+      // For gate entries, we just mark them as DISPATCHED (or similar)
+      setGateEntries(prev => prev.map(e => e.id === selectedGateEntry.id ? { ...e, status: 'DISPATCHED' } : e));
+      setSelectedGateEntry(null);
+    }
   };
 
   return (
@@ -70,7 +79,7 @@ const DispatchView: React.FC<Props> = ({ orders, updateOrder, products }) => {
         <p className="text-slate-500">Confirma la carga física y captura la firma del cliente.</p>
       </header>
 
-      {!selectedOrder ? (
+      {!selectedOrder && !selectedGateEntry ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {readyOrders.map(order => (
             <div key={order.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:border-blue-400 transition-all cursor-pointer" onClick={() => setSelectedOrder(order)}>
@@ -85,29 +94,50 @@ const DispatchView: React.FC<Props> = ({ orders, updateOrder, products }) => {
               <button className="w-full py-2 bg-slate-50 text-slate-600 rounded-lg text-sm font-bold hover:bg-slate-100 transition-colors">Abrir para Firma</button>
             </div>
           ))}
-          {readyOrders.length === 0 && (
+          {readyGateEntries.map(entry => (
+            <div key={entry.id} className="bg-amber-50/30 p-6 rounded-2xl border border-amber-200 shadow-sm hover:border-amber-400 transition-all cursor-pointer" onClick={() => setSelectedGateEntry(entry)}>
+              <div className="flex justify-between items-start mb-4">
+                <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center">
+                  <RotateCcw size={20} />
+                </div>
+                <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-amber-200 text-amber-700 rounded-full">Cambio Validado</span>
+              </div>
+              <h3 className="font-bold text-slate-800 mb-1">{entry.customerName}</h3>
+              <p className="text-xs text-slate-400 mb-4">{entry.items.length} productos de cambio</p>
+              <button className="w-full py-2 bg-amber-100/50 text-amber-700 rounded-lg text-sm font-bold hover:bg-amber-200/50 transition-colors">Abrir para Firma</button>
+            </div>
+          ))}
+          {readyOrders.length === 0 && readyGateEntries.length === 0 && (
             <div className="col-span-full p-20 text-center text-slate-400">
               <CheckCircle className="mx-auto mb-4 opacity-20" size={64} />
-              <p>No hay pedidos pendientes de despacho.</p>
+              <p>No hay pedidos ni cambios pendientes de despacho.</p>
             </div>
           )}
         </div>
       ) : (
         <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
           <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="font-bold text-slate-800 text-lg">Confirmar Entrega: {selectedOrder.customerName}</h2>
-            <button onClick={() => setSelectedOrder(null)} className="text-slate-400 hover:text-slate-600"><RotateCcw size={20}/></button>
+            <h2 className="font-bold text-slate-800 text-lg">Confirmar Entrega: {selectedOrder?.customerName || selectedGateEntry?.customerName}</h2>
+            <button onClick={() => { setSelectedOrder(null); setSelectedGateEntry(null); }} className="text-slate-400 hover:text-slate-600"><RotateCcw size={20}/></button>
           </div>
           <div className="p-8 space-y-6">
             <div className="bg-slate-50 p-6 rounded-xl border border-slate-100">
-              <p className="text-sm font-bold text-slate-400 uppercase mb-4">Detalle de Carga</p>
+              <p className="text-sm font-bold text-slate-400 uppercase mb-4">Detalle de Carga {selectedGateEntry ? '(CAMBIO)' : ''}</p>
               <ul className="space-y-2">
-                {selectedOrder.items.map(item => {
+                {selectedOrder ? selectedOrder.items.map(item => {
                   const product = products.find(p => p.id === item.productId);
                   return (
                     <li key={item.id} className="flex justify-between text-sm">
                       <span className="text-slate-700 font-medium">{product?.name || `Prod #${item.productId}`}</span>
                       <span className="font-bold text-slate-900">{item.quantity} u. + {item.bonusQuantity} SC</span>
+                    </li>
+                  );
+                }) : selectedGateEntry?.items.map(item => {
+                  const product = products.find(p => p.id === item.productId);
+                  return (
+                    <li key={item.id} className="flex justify-between text-sm">
+                      <span className="text-slate-700 font-medium">{product?.name || item.productName}</span>
+                      <span className="font-bold text-slate-900">{item.quantity} u.</span>
                     </li>
                   );
                 })}
