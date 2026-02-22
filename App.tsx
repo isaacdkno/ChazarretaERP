@@ -271,7 +271,7 @@ const App: React.FC = () => {
             {(currentUser.role === UserRole.GATE || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/gate" icon={<Truck size={20} />} label="Portería" />}
             {(currentUser.role === UserRole.ORDER_CENTER || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/center" icon={<Settings size={20} />} label="Gestión de Pedidos" />}
             {(currentUser.role === UserRole.FACTORY || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/factory" icon={<Box size={20} />} label="Producción" />}
-            {(currentUser.role === UserRole.DISPATCH || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/dispatch" icon={<Truck size={20} />} label="Hoja de Ruta" />}
+            {(currentUser.role === UserRole.DISPATCH || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/dispatch" icon={<Truck size={20} />} label="Despacho de Entregas" />}
             {(currentUser.role === UserRole.COLLECTION || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/collection" icon={<BadgeDollarSign size={20} />} label="Caja y Cobranza" />}
             {currentUser.role === UserRole.ADMIN && <SidebarLink to="/audit" icon={<Github size={20} />} label="Sincronización Cloud" />}
           </div>

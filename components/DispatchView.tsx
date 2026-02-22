@@ -75,7 +75,7 @@ const DispatchView: React.FC<Props> = ({ orders, updateOrder, products, gateEntr
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-slate-800">Despacho y Logística</h1>
+        <h1 className="text-2xl font-bold text-slate-800">Despacho de Entregas</h1>
         <p className="text-slate-500">Confirma la carga física y captura la firma del cliente.</p>
       </header>
 
