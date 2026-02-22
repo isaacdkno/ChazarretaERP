@@ -13,7 +13,12 @@ import {
   Printer,
   CheckSquare,
   Square,
-  FileText
+  FileText,
+  LayoutDashboard,
+  Users,
+  TrendingDown,
+  AlertTriangle,
+  Clock
 } from 'lucide-react';
 import { Order, OrderStatus, Customer, PaymentReceipt } from '../types';
 import { supabase } from '../supabase';
@@ -26,6 +31,7 @@ interface Props {
 }
 
 const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCustomers }) => {
+  const [activeTab, setActiveTab] = useState<'COLLECTION' | 'ACCOUNTS'>('COLLECTION');
   const [paymentMode, setPaymentMode] = useState<'FIFO' | 'MANUAL'>('FIFO');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [cashAmount, setCashAmount] = useState<number>(0);
@@ -33,6 +39,22 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [processing, setProcessing] = useState(false);
   const [lastReceipt, setLastReceipt] = useState<PaymentReceipt | null>(null);
+  const [receipts, setReceipts] = useState<PaymentReceipt[]>([]);
+
+  useEffect(() => {
+    fetchGlobalReceipts();
+  }, []);
+
+  const fetchGlobalReceipts = async () => {
+    const { data, error } = await supabase
+      .from('payment_receipts')
+      .select('*')
+      .order('createdAt', { ascending: false });
+    
+    if (!error && data) {
+      setReceipts(data);
+    }
+  };
 
   const totalCollected = cashAmount + transferAmount;
 
@@ -280,21 +302,39 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
         
         <div className="flex bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm">
           <button 
-            onClick={() => setPaymentMode('FIFO')}
-            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentMode === 'FIFO' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+            onClick={() => setActiveTab('COLLECTION')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'COLLECTION' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
           >
-            Método FIFO
+            <Wallet size={16} /> Cobranza
           </button>
           <button 
-            onClick={() => setPaymentMode('MANUAL')}
-            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentMode === 'MANUAL' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+            onClick={() => setActiveTab('ACCOUNTS')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'ACCOUNTS' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
           >
-            Selección Manual
+            <Users size={16} /> Estado de Cuentas
           </button>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      {activeTab === 'COLLECTION' ? (
+        <>
+          <div className="flex justify-end mb-4">
+            <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+              <button 
+                onClick={() => setPaymentMode('FIFO')}
+                className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${paymentMode === 'FIFO' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+              >
+                Método FIFO
+              </button>
+              <button 
+                onClick={() => setPaymentMode('MANUAL')}
+                className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${paymentMode === 'MANUAL' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+              >
+                Selección Manual
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/50">
             <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-6 flex items-center gap-2">
@@ -495,6 +535,126 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
           </div>
         </div>
       </div>
+      </>
+      ) : (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <StatsCard 
+              title="Deuda Total" 
+              value={`$${customers.reduce((acc, c) => acc + c.balance, 0).toLocaleString()}`} 
+              subtitle="Cuentas por cobrar" 
+              icon={<TrendingDown size={24}/>} 
+              color="red" 
+            />
+            <StatsCard 
+              title="Clientes con Deuda" 
+              value={customers.filter(c => c.balance > 0).length.toString()} 
+              subtitle="De un total de 12" 
+              icon={<Users size={24}/>} 
+              color="amber" 
+            />
+            <StatsCard 
+              title="Cobrado hoy" 
+              value={`$${receipts.filter(r => new Date(r.createdAt).toDateString() === new Date().toDateString()).reduce((acc, r) => acc + r.amount, 0).toLocaleString()}`} 
+              subtitle="Ingresos del día" 
+              icon={<BadgeDollarSign size={24}/>} 
+              color="emerald" 
+            />
+            <StatsCard 
+              title="Promedio Deuda" 
+              value={`$${Math.round(customers.reduce((acc, c) => acc + c.balance, 0) / (customers.filter(c => c.balance > 0).length || 1)).toLocaleString()}`} 
+              subtitle="Por distribuidor" 
+              icon={<Calculator size={24}/>} 
+              color="blue" 
+            />
+          </div>
+
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
+            <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+              <h2 className="font-black text-slate-800 uppercase tracking-tight text-lg flex items-center gap-2">
+                <LayoutDashboard className="text-blue-500" size={20} /> Estado General de Cuentas
+              </h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b border-slate-100">
+                  <tr>
+                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Distribuidor</th>
+                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Saldo Pendiente</th>
+                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Comandas</th>
+                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Último Pago</th>
+                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {customers.map(customer => {
+                    const lastPayment = receipts.find(r => r.customerId === customer.id);
+                    const pendingOrders = orders.filter(o => o.customerId === customer.id && (o.status === OrderStatus.DISPATCHED || o.status === OrderStatus.PAID_PARTIAL));
+                    
+                    return (
+                      <tr key={customer.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-8 py-6">
+                          <p className="font-black text-slate-800 uppercase text-sm">{customer.name}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">ID: {customer.id.substr(0, 8)}</p>
+                        </td>
+                        <td className="px-8 py-6 text-right">
+                          <p className="text-lg font-black text-slate-900 tracking-tighter">${customer.balance.toLocaleString()}</p>
+                        </td>
+                        <td className="px-8 py-6 text-center">
+                          <span className="text-xs font-black text-slate-600 bg-slate-100 px-3 py-1 rounded-full">{pendingOrders.length}</span>
+                        </td>
+                        <td className="px-8 py-6">
+                          {lastPayment ? (
+                            <div>
+                              <p className="font-bold text-slate-700 text-xs">${lastPayment.amount.toLocaleString()}</p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase">{new Date(lastPayment.createdAt).toLocaleDateString()}</p>
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-slate-300 font-black uppercase">Sin registros</p>
+                          )}
+                        </td>
+                        <td className="px-8 py-6 text-center">
+                          {customer.balance > 100000 ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-100 text-red-700 rounded-full text-[9px] font-black uppercase tracking-widest border border-red-200">
+                              <AlertTriangle size={10} /> Crítico
+                            </span>
+                          ) : customer.balance > 0 ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-[9px] font-black uppercase tracking-widest border border-amber-200">
+                              <Clock size={10} /> Con Deuda
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[9px] font-black uppercase tracking-widest border border-emerald-200">
+                              <CheckCircle2 size={10} /> Al día
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const StatsCard: React.FC<{title: string, value: string, subtitle: string, icon: React.ReactNode, color: string}> = ({ title, value, subtitle, icon, color }) => {
+  const colors: {[key: string]: string} = { 
+    blue: 'text-blue-600 bg-blue-50 border-blue-100', 
+    purple: 'text-purple-600 bg-purple-50 border-purple-100', 
+    emerald: 'text-emerald-600 bg-emerald-50 border-emerald-100', 
+    red: 'text-red-600 bg-red-50 border-red-100', 
+    amber: 'text-amber-600 bg-amber-50 border-amber-100' 
+  };
+  return (
+    <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm transition-all hover:scale-[1.02]">
+      <div className={`w-12 h-12 ${colors[color]} rounded-2xl flex items-center justify-center mb-4 border`}>{icon}</div>
+      <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">{title}</p>
+      <h3 className="text-2xl font-black text-slate-900 tracking-tighter mb-1">{value}</h3>
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{subtitle}</p>
     </div>
   );
 };

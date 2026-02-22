@@ -13,25 +13,38 @@ import {
   History,
   Printer,
   FileText,
-  X
+  X,
+  LayoutDashboard,
+  ClipboardList,
+  Truck,
+  BadgeDollarSign,
+  ArrowUpRight,
+  ArrowDownLeft,
+  RotateCcw
 } from 'lucide-react';
-import { Product, Customer, Order, OrderStatus, OrderItem, UserRole, PaymentReceipt } from '../types';
+import { Product, Customer, Order, OrderStatus, OrderItem, UserRole, PaymentReceipt, GateEntry } from '../types';
 import { supabase } from '../supabase';
 
 interface Props {
   addOrder: (o: Order) => void;
   customers: Customer[];
   products: Product[];
+  orders: Order[];
+  gateEntries: GateEntry[];
   currentUser: {name: string, role: UserRole, email?: string};
 }
 
-const DistributorView: React.FC<Props> = ({ addOrder, customers, products, currentUser }) => {
-  const [activeTab, setActiveTab] = useState<'ORDER' | 'HISTORY'>('ORDER');
+const DistributorView: React.FC<Props> = ({ addOrder, customers, products, orders, gateEntries, currentUser }) => {
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'ORDER' | 'HISTORY' | 'ORDER_HISTORY' | 'GATE_HISTORY'>('DASHBOARD');
   const [cart, setCart] = useState<{[id: string]: number}>({});
   const [search, setSearch] = useState('');
   const [success, setSuccess] = useState(false);
   const [receipts, setReceipts] = useState<PaymentReceipt[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
+
+  const myCustomer = customers.find(c => c.name.toLowerCase() === currentUser.name.toLowerCase());
+  const myOrders = orders.filter(o => o.customerId === myCustomer?.id);
+  const myGateEntries = gateEntries.filter(e => e.customerId === myCustomer?.id);
 
   useEffect(() => {
     if (activeTab === 'HISTORY') {
@@ -213,23 +226,150 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products, curre
           <p className="text-slate-500 font-medium">Hola <span className="text-blue-600 font-bold">{currentUser.name}</span>, gestione sus pedidos y pagos.</p>
         </div>
         
-        <div className="flex bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto no-scrollbar">
+          <button 
+            onClick={() => setActiveTab('DASHBOARD')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'DASHBOARD' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <LayoutDashboard size={18} /> Resumen
+          </button>
           <button 
             onClick={() => setActiveTab('ORDER')}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'ORDER' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'ORDER' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
           >
-            <ShoppingCart size={18} /> Cargar Pedido
+            <ShoppingCart size={18} /> Nuevo Pedido
+          </button>
+          <button 
+            onClick={() => setActiveTab('ORDER_HISTORY')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'ORDER_HISTORY' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <ClipboardList size={18} /> Mis Pedidos
           </button>
           <button 
             onClick={() => setActiveTab('HISTORY')}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'HISTORY' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'HISTORY' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
           >
-            <History size={18} /> Mis Pagos
+            <BadgeDollarSign size={18} /> Mis Pagos
+          </button>
+          <button 
+            onClick={() => setActiveTab('GATE_HISTORY')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'GATE_HISTORY' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <Truck size={18} /> Mis Cambios
           </button>
         </div>
       </header>
 
-      {activeTab === 'ORDER' ? (
+      {activeTab === 'DASHBOARD' && (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+              <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-6">
+                <BadgeDollarSign size={28} />
+              </div>
+              <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Saldo Actual</p>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">
+                ${myCustomer?.balance.toLocaleString() || '0'}
+              </h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Cuenta Corriente</p>
+            </div>
+
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+              <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-6">
+                <ClipboardList size={28} />
+              </div>
+              <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Pedidos Pendientes</p>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">
+                {myOrders.filter(o => o.status === OrderStatus.PENDING || o.status === OrderStatus.VALIDATED).length}
+              </h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">En proceso de preparación</p>
+            </div>
+
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+              <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-6">
+                <Truck size={28} />
+              </div>
+              <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Cambios Realizados</p>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">
+                {myGateEntries.length}
+              </h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Historial de portería</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
+              <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                <h2 className="font-black text-slate-800 uppercase tracking-tight text-sm">Últimos Pedidos</h2>
+                <button onClick={() => setActiveTab('ORDER_HISTORY')} className="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline">Ver Todo</button>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {myOrders.slice(0, 5).map(order => (
+                  <div key={order.id} className="px-8 py-4 flex items-center justify-between hover:bg-slate-50 transition-all">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400">
+                        <FileText size={18} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-400 font-black uppercase">#ORD-{order.id.substr(0, 6).toUpperCase()}</p>
+                        <p className="font-bold text-slate-800 text-xs">{new Date(order.createdAt).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-black text-slate-900 text-sm">${order.totalAmount.toLocaleString()}</p>
+                      <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
+                        order.status === OrderStatus.PAID_FULL ? 'bg-emerald-100 text-emerald-600' :
+                        order.status === OrderStatus.PENDING ? 'bg-amber-100 text-amber-600' :
+                        'bg-blue-100 text-blue-600'
+                      }`}>
+                        {order.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {myOrders.length === 0 && (
+                  <div className="p-12 text-center text-slate-300 font-black uppercase tracking-widest text-xs">Sin pedidos recientes</div>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
+              <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                <h2 className="font-black text-slate-800 uppercase tracking-tight text-sm">Últimos Cambios / Devoluciones</h2>
+                <button onClick={() => setActiveTab('GATE_HISTORY')} className="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline">Ver Todo</button>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {myGateEntries.slice(0, 5).map(entry => (
+                  <div key={entry.id} className="px-8 py-4 flex items-center justify-between hover:bg-slate-50 transition-all">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500">
+                        <RotateCcw size={18} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-400 font-black uppercase">#GATE-{entry.id.substr(0, 6).toUpperCase()}</p>
+                        <p className="font-bold text-slate-800 text-xs">{new Date(entry.createdAt).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-black text-slate-900 text-sm">{entry.items.reduce((acc, i) => acc + i.quantity, 0)} u.</p>
+                      <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
+                        entry.status === 'CONVERTED' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
+                      }`}>
+                        {entry.status === 'CONVERTED' ? 'Validado' : 'Pendiente'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {myGateEntries.length === 0 && (
+                  <div className="p-12 text-center text-slate-300 font-black uppercase tracking-widest text-xs">Sin cambios registrados</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'ORDER' && (
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Product Selection List */}
           <div className="flex-1 space-y-6">
@@ -439,7 +579,97 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products, curre
             </div>
           </div>
         </div>
-      ) : (
+      )}
+
+      {activeTab === 'ORDER_HISTORY' && (
+        <div className="space-y-6 animate-in slide-in-from-bottom-4">
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
+            <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+              <h2 className="font-black text-slate-800 uppercase tracking-tight text-lg flex items-center gap-2">
+                <ClipboardList className="text-blue-500" size={20} /> Historial de Comandas
+              </h2>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {myOrders.length === 0 ? (
+                <div className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">
+                  No se registran pedidos en su cuenta
+                </div>
+              ) : myOrders.map(order => (
+                <div key={order.id} className="px-8 py-6 flex flex-col md:flex-row md:items-center justify-between hover:bg-slate-50/50 transition-all gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center">
+                      <FileText size={24} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Comanda #ORD-{order.id.substr(0, 8).toUpperCase()}</p>
+                      <p className="font-black text-slate-800 uppercase text-sm">{new Date(order.createdAt).toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-8">
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-slate-900 tracking-tighter">${order.totalAmount.toLocaleString()}</p>
+                      <div className="flex items-center justify-end gap-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Total</span>
+                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
+                          order.status === OrderStatus.PAID_FULL ? 'bg-emerald-100 text-emerald-600' :
+                          order.status === OrderStatus.PENDING ? 'bg-amber-100 text-amber-600' :
+                          'bg-blue-100 text-blue-600'
+                        }`}>
+                          {order.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'GATE_HISTORY' && (
+        <div className="space-y-6 animate-in slide-in-from-bottom-4">
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
+            <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+              <h2 className="font-black text-slate-800 uppercase tracking-tight text-lg flex items-center gap-2">
+                <Truck className="text-amber-500" size={20} /> Historial de Portería (Cambios)
+              </h2>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {myGateEntries.length === 0 ? (
+                <div className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">
+                  No se registran ingresos de portería
+                </div>
+              ) : myGateEntries.map(entry => (
+                <div key={entry.id} className="px-8 py-6 flex flex-col md:flex-row md:items-center justify-between hover:bg-slate-50/50 transition-all gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-amber-50 text-amber-500 rounded-2xl flex items-center justify-center">
+                      <RotateCcw size={24} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Ingreso #GATE-{entry.id.substr(0, 8).toUpperCase()}</p>
+                      <p className="font-black text-slate-800 uppercase text-sm">{new Date(entry.createdAt).toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-8">
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-slate-900 tracking-tighter">{entry.items.reduce((acc, i) => acc + i.quantity, 0)} u.</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">{entry.items.length} productos registrados</p>
+                    </div>
+                    <div className={`px-4 py-1.5 rounded-xl text-[9px] font-black border tracking-widest ${
+                      entry.status === 'CONVERTED' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'
+                    }`}>
+                      {entry.status === 'CONVERTED' ? 'VALIDADO' : 'PENDIENTE'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'HISTORY' && (
         <div className="space-y-6 animate-in slide-in-from-bottom-4">
           <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
             <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">

@@ -267,7 +267,7 @@ const App: React.FC = () => {
             {(currentUser.role === UserRole.ADMIN) && <SidebarLink to="/catalog" icon={<Package size={20} />} label="Productos y Precios" />}
             
             <p className="px-4 py-2 mt-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Tu Módulo</p>
-            {(currentUser.role === UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/new-order" icon={<Plus size={20} />} label="Cargar Pedido" />}
+            {(currentUser.role === UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/new-order" icon={<LayoutDashboard size={20} />} label="Panel Distribuidor" />}
             {(currentUser.role === UserRole.GATE || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/gate" icon={<Truck size={20} />} label="Portería" />}
             {(currentUser.role === UserRole.ORDER_CENTER || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/center" icon={<Settings size={20} />} label="Gestión de Pedidos" />}
             {(currentUser.role === UserRole.FACTORY || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/factory" icon={<Box size={20} />} label="Producción" />}
