@@ -196,6 +196,7 @@ const DistributorView: React.FC<Props> = ({ addOrder, customers, products, curre
       status: OrderStatus.PENDING,
       items,
       totalAmount: subtotal,
+      paidAmount: 0,
       createdAt: new Date().toISOString()
     };
     addOrder(newOrder);

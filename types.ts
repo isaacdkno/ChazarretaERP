@@ -55,6 +55,7 @@ export interface Order {
   status: OrderStatus;
   items: OrderItem[];
   totalAmount: number;
+  paidAmount: number;
   createdAt: string;
   signatureUrl?: string;
   pdfUrl?: string;

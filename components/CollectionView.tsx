@@ -52,7 +52,7 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
 
   const currentCustomerBalance = Math.max(
     customers.find(c => c.id === selectedCustomerId)?.balance || 0,
-    customerOrders.reduce((sum, o) => sum + o.totalAmount, 0)
+    customerOrders.reduce((sum, o) => sum + (o.totalAmount - o.paidAmount), 0)
   );
 
   // Reset selection when customer changes
@@ -131,20 +131,23 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
       for (const order of sortedOrdersToProcess) {
         if (currentPaymentPool <= 0) break;
 
-        const orderTotal = order.totalAmount;
+        const remainingOnOrder = order.totalAmount - order.paidAmount;
         let nextStatus: OrderStatus = order.status;
+        let newPaidAmount = order.paidAmount;
 
-        if (currentPaymentPool >= orderTotal) {
-          // Covers the whole order
+        if (currentPaymentPool >= remainingOnOrder) {
+          // Covers the whole remaining amount
           nextStatus = OrderStatus.PAID_FULL;
-          currentPaymentPool -= orderTotal;
+          newPaidAmount = order.totalAmount;
+          currentPaymentPool -= remainingOnOrder;
         } else {
           // Partial payment
           nextStatus = OrderStatus.PAID_PARTIAL;
+          newPaidAmount += currentPaymentPool;
           currentPaymentPool = 0; // Pool exhausted
         }
 
-        updateOrder({ ...order, status: nextStatus });
+        updateOrder({ ...order, status: nextStatus, paidAmount: newPaidAmount });
       }
 
       // 4. Update local customers
@@ -277,7 +280,7 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
                   <option value="">Seleccionar Distribuidor...</option>
                   {customers.map(c => {
                     const pendingOrders = getCustomerPendingOrders(c.id);
-                    const pendingTotal = pendingOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+                    const pendingTotal = pendingOrders.reduce((sum, o) => sum + (o.totalAmount - o.paidAmount), 0);
                     const displayBalance = Math.max(c.balance, pendingTotal);
                     return (
                       <option key={c.id} value={c.id}>
@@ -385,17 +388,17 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Total Seleccionado</p>
                     <div className="flex items-center gap-2 justify-end">
                       <p className="text-lg font-black text-blue-600 tracking-tighter leading-none">
-                        ${orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + o.totalAmount, 0).toLocaleString()}
+                        ${orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + (o.totalAmount - o.paidAmount), 0).toLocaleString()}
                       </p>
                       {totalCollected > 0 && (
                         <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${
-                          orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + o.totalAmount, 0) > totalCollected 
+                          orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + (o.totalAmount - o.paidAmount), 0) > totalCollected 
                             ? 'bg-red-100 text-red-600' 
                             : 'bg-emerald-100 text-emerald-600'
                         }`}>
-                          {orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + o.totalAmount, 0) > totalCollected 
-                            ? `Exceso: $${(orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + o.totalAmount, 0) - totalCollected).toLocaleString()}`
-                            : `Restante: $${(totalCollected - orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + o.totalAmount, 0)).toLocaleString()}`
+                          {orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + (o.totalAmount - o.paidAmount), 0) > totalCollected 
+                            ? `Exceso: $${(orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + (o.totalAmount - o.paidAmount), 0) - totalCollected).toLocaleString()}`
+                            : `Restante: $${(totalCollected - orders.filter(o => selectedOrderIds.includes(o.id)).reduce((sum, o) => sum + (o.totalAmount - o.paidAmount), 0)).toLocaleString()}`
                           }
                         </span>
                       )}
@@ -444,7 +447,7 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-2xl font-black text-slate-900 tracking-tighter">${order.totalAmount.toLocaleString()}</p>
+                    <p className="text-2xl font-black text-slate-900 tracking-tighter">${(order.totalAmount - order.paidAmount).toLocaleString()}</p>
                     <p className="text-[10px] font-bold text-slate-400 uppercase">Saldo de Comanda</p>
                   </div>
                 </div>

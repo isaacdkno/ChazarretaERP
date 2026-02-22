@@ -135,6 +135,7 @@ const App: React.FC = () => {
           customerName: o.customer_name || 'Desconocido',
           status: o.status as OrderStatus,
           totalAmount: o.total_amount,
+          paidAmount: o.paid_amount || 0,
           createdAt: o.created_at,
           signatureUrl: o.signature_url,
           items: (o.order_items || []).map((i: any) => ({
@@ -172,6 +173,7 @@ const App: React.FC = () => {
           customer_name: order.customerName,
           status: order.status,
           total_amount: order.totalAmount,
+          paid_amount: 0,
           created_at: order.createdAt
         }])
         .select().single();
@@ -213,7 +215,8 @@ const App: React.FC = () => {
       await supabase.from('orders').update({
         status: updatedOrder.status,
         signature_url: updatedOrder.signatureUrl,
-        total_amount: updatedOrder.totalAmount
+        total_amount: updatedOrder.totalAmount,
+        paid_amount: updatedOrder.paidAmount
       }).eq('id', updatedOrder.id);
       setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
       setIsSynced(true);

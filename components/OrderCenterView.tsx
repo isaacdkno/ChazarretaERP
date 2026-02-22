@@ -127,6 +127,7 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
         status: OrderStatus.PENDING,
         items,
         totalAmount: total,
+        paidAmount: 0,
         createdAt: new Date().toISOString()
       });
     }
