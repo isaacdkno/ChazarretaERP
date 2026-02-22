@@ -106,5 +106,6 @@ export interface PaymentReceipt {
   transferAmount: number;
   paymentMode: 'FIFO' | 'MANUAL';
   orderIds: string[];
+  details?: { orderId: string, amountApplied: number, remainingBefore: number, remainingAfter: number }[];
   createdAt: string;
 }

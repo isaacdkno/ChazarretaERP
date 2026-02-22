@@ -91,16 +91,55 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
     }
 
     try {
+      // 1. Update Orders Status with Partial Payment Logic
+      let currentPaymentPool = totalCollected;
+      const receiptDetails: { orderId: string, amountApplied: number, remainingBefore: number, remainingAfter: number }[] = [];
+      
+      // We sort orders by date to ensure consistent application in FIFO
+      const sortedOrdersToProcess = customerOrders.filter(o => ordersToPay.includes(o.id));
+
+      for (const order of sortedOrdersToProcess) {
+        if (currentPaymentPool <= 0) break;
+
+        const remainingOnOrder = order.totalAmount - order.paidAmount;
+        let nextStatus: OrderStatus = order.status;
+        let newPaidAmount = order.paidAmount;
+        let applied = 0;
+
+        if (currentPaymentPool >= remainingOnOrder) {
+          // Covers the whole remaining amount
+          nextStatus = OrderStatus.PAID_FULL;
+          applied = remainingOnOrder;
+          newPaidAmount = order.totalAmount;
+          currentPaymentPool -= remainingOnOrder;
+        } else {
+          // Partial payment
+          nextStatus = OrderStatus.PAID_PARTIAL;
+          applied = currentPaymentPool;
+          newPaidAmount += currentPaymentPool;
+          currentPaymentPool = 0; // Pool exhausted
+        }
+
+        receiptDetails.push({
+          orderId: order.id,
+          amountApplied: applied,
+          remainingBefore: remainingOnOrder,
+          remainingAfter: order.totalAmount - newPaidAmount
+        });
+
+        updateOrder({ ...order, status: nextStatus, paidAmount: newPaidAmount });
+      }
+
+      // 2. Update balance
       const newBalance = Math.max(0, customer.balance - totalCollected);
       
-      // 1. Update balance
       const { error: balanceError } = await supabase
         .from('customers')
         .update({ balance: newBalance })
         .eq('id', selectedCustomerId);
       if (balanceError) throw balanceError;
 
-      // 2. Create Receipt
+      // 3. Create Receipt
       const receipt: Omit<PaymentReceipt, 'id'> = {
         customerId: selectedCustomerId,
         customerName: customer.name,
@@ -109,6 +148,7 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
         transferAmount,
         paymentMode,
         orderIds: ordersToPay,
+        details: receiptDetails,
         createdAt: new Date().toISOString()
       };
 
@@ -120,34 +160,6 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
       
       if (receiptError) {
         console.warn("Table payment_receipts might not exist, falling back to local state only.");
-      }
-
-      // 3. Update Orders Status with Partial Payment Logic
-      let currentPaymentPool = totalCollected;
-      
-      // We sort orders by date to ensure consistent application in FIFO
-      const sortedOrdersToProcess = customerOrders.filter(o => ordersToPay.includes(o.id));
-
-      for (const order of sortedOrdersToProcess) {
-        if (currentPaymentPool <= 0) break;
-
-        const remainingOnOrder = order.totalAmount - order.paidAmount;
-        let nextStatus: OrderStatus = order.status;
-        let newPaidAmount = order.paidAmount;
-
-        if (currentPaymentPool >= remainingOnOrder) {
-          // Covers the whole remaining amount
-          nextStatus = OrderStatus.PAID_FULL;
-          newPaidAmount = order.totalAmount;
-          currentPaymentPool -= remainingOnOrder;
-        } else {
-          // Partial payment
-          nextStatus = OrderStatus.PAID_PARTIAL;
-          newPaidAmount += currentPaymentPool;
-          currentPaymentPool = 0; // Pool exhausted
-        }
-
-        updateOrder({ ...order, status: nextStatus, paidAmount: newPaidAmount });
       }
 
       // 4. Update local customers
@@ -213,7 +225,26 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
           </div>
           <div class="line"></div>
           <div class="bold">COMANDAS AFECTADAS:</div>
-          ${receipt.orderIds.map(id => {
+          ${(receipt.details || []).map(detail => {
+            const order = orders.find(o => o.id === detail.orderId);
+            return `
+              <div style="margin-bottom: 8px;">
+                <div class="flex bold">
+                  <span>#ORD-${detail.orderId.substr(0,6).toUpperCase()}</span>
+                  <span>$${detail.amountApplied.toLocaleString()}</span>
+                </div>
+                <div class="flex" style="font-size: 10px; color: #444;">
+                  <span>Total Comanda:</span>
+                  <span>$${order?.totalAmount.toLocaleString() || '0'}</span>
+                </div>
+                <div class="flex" style="font-size: 10px; color: #444;">
+                  <span>Saldo Restante:</span>
+                  <span>$${detail.remainingAfter.toLocaleString()}</span>
+                </div>
+              </div>
+            `;
+          }).join('')}
+          ${(!receipt.details && receipt.orderIds) ? receipt.orderIds.map(id => {
             const order = orders.find(o => o.id === id);
             return `
               <div class="flex">
@@ -221,7 +252,7 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
                 <span>$${order?.totalAmount.toLocaleString() || '0'}</span>
               </div>
             `;
-          }).join('')}
+          }).join('') : ''}
           <div class="line"></div>
           <div class="center" style="margin-top: 20px;">
             GRACIAS POR SU PAGO<br>
@@ -447,8 +478,16 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-2xl font-black text-slate-900 tracking-tighter">${(order.totalAmount - order.paidAmount).toLocaleString()}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Saldo de Comanda</p>
+                    <div className="flex flex-col items-end">
+                      <p className="text-2xl font-black text-slate-900 tracking-tighter">${(order.totalAmount - order.paidAmount).toLocaleString()}</p>
+                      <div className="flex gap-2 text-[9px] font-bold uppercase text-slate-400">
+                        <span>Total: ${order.totalAmount.toLocaleString()}</span>
+                        {order.paidAmount > 0 && (
+                          <span className="text-blue-500">Pagado: ${order.paidAmount.toLocaleString()}</span>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Saldo Pendiente</p>
                   </div>
                 </div>
               ))}
