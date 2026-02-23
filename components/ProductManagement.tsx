@@ -174,19 +174,26 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
 
       if (oldPrice === newPrice) return;
 
-      await supabase.from('price_history').insert([{
+      const { error: historyError } = await supabase.from('price_history').insert([{
         price_list_id: listId,
         product_id: productId,
         price: oldPrice,
         effective_date: new Date().toISOString()
       }]);
+      if (historyError) {
+        console.warn("Could not save price history, table might not exist.", historyError);
+      }
 
       await supabase.from('product_prices')
         .upsert({ product_id: productId, price_list_id: listId, price: newPrice });
 
-      await supabase.from('price_lists')
+      const { error: updateError } = await supabase.from('price_lists')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', listId);
+        
+      if (updateError) {
+        console.warn("Could not update updated_at on price_lists, column might not exist.");
+      }
 
       onRefresh();
     } catch (error) {
@@ -205,18 +212,19 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
     try {
       const listData = {
         name,
-        description: editPriceList.description || '',
-        updated_at: new Date().toISOString()
+        description: editPriceList.description || ''
       };
 
       if (isEditingPriceList) {
-        await supabase.from('price_lists').update(listData).eq('id', isEditingPriceList);
+        const { error } = await supabase.from('price_lists').update(listData).eq('id', isEditingPriceList);
+        if (error) throw error;
       } else {
         const newListId = 'list-' + Math.random().toString(36).substr(2, 5);
-        await supabase.from('price_lists').insert([{
+        const { error } = await supabase.from('price_lists').insert([{
           ...listData,
           id: newListId
         }]);
+        if (error) throw error;
 
         const initialPrices = products.map(p => ({
           product_id: p.id,

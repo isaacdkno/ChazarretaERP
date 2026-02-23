@@ -15,9 +15,18 @@ import {
   Zap,
   Minus,
   Plus,
-  Truck
+  Truck,
+  Tag,
+  History as HistoryIcon,
+  Download,
+  Calendar,
+  ArrowLeft
 } from 'lucide-react';
-import { Order, OrderStatus, Product, Customer, OrderItem, GateEntry } from '../types';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { format } from 'date-fns';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Order, OrderStatus, Product, Customer, OrderItem, GateEntry, PriceList } from '../types';
 
 interface Props {
   orders: Order[];
@@ -25,15 +34,120 @@ interface Props {
   addOrder: (order: Order) => void;
   products: Product[];
   customers: Customer[];
+  priceLists: PriceList[];
+  onRefresh: () => void;
   gateEntries: GateEntry[];
   setGateEntries: React.Dispatch<React.SetStateAction<GateEntry[]>>;
 }
 
-const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, products, customers, gateEntries, setGateEntries }) => {
+const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, products, customers, priceLists, onRefresh, gateEntries, setGateEntries }) => {
+
+  const fetchPriceHistory = async (listId: string) => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('price_history')
+        .select('*')
+        .eq('price_list_id', listId)
+        .order('effective_date', { ascending: false });
+      
+      if (error) throw error;
+      setPriceHistory(data || []);
+      setViewingHistory(listId);
+    } catch (error) {
+      console.error("Error fetching price history:", error);
+      alert("Error al cargar el historial de precios.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSavePriceList = async () => {
+    const name = editPriceList.name?.trim();
+    if (!name) {
+      alert("El nombre de la lista es obligatorio");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const listData = {
+        name,
+        description: editPriceList.description || ''
+      };
+
+      if (isEditingPriceList) {
+        const { error } = await supabase.from('price_lists').update(listData).eq('id', isEditingPriceList);
+        if (error) throw error;
+      } else {
+        const newListId = 'list-' + Math.random().toString(36).substr(2, 5);
+        const { error } = await supabase.from('price_lists').insert([{
+          ...listData,
+          id: newListId
+        }]);
+        if (error) throw error;
+
+        const initialPrices = products.map(p => ({
+          product_id: p.id,
+          price_list_id: newListId,
+          price: 0
+        }));
+        await supabase.from('product_prices').insert(initialPrices);
+      }
+
+      onRefresh();
+      setShowPriceListForm(false);
+      setIsEditingPriceList(null);
+      setEditPriceList({});
+    } catch (error) {
+      console.error(error);
+      alert("Error al guardar la lista de precios");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const exportToPDF = (list: PriceList) => {
+    const doc = new jsPDF();
+    
+    doc.setFontSize(20);
+    doc.setTextColor(15, 23, 42);
+    doc.text('CHAZARRETA ERP', 14, 22);
+    
+    doc.setFontSize(12);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Lista de Precios: ${list.name.toUpperCase()}`, 14, 32);
+    doc.text(`Vigente desde: ${format(new Date(list.updatedAt || new Date()), 'dd/MM/yyyy HH:mm')}`, 14, 40);
+    
+    const tableData = products.map(p => [
+      p.name,
+      p.brand,
+      p.category,
+      `$${p.prices[list.id]?.toLocaleString() || '0'}`
+    ]);
+
+    autoTable(doc, {
+      startY: 50,
+      head: [['Producto', 'Marca', 'Categoría', 'Precio']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { top: 50 },
+    });
+
+    doc.save(`Lista_Precios_${list.name.replace(/\s+/g, '_')}_${format(new Date(), 'yyyyMMdd')}.pdf`);
+  };
   const [activeTab, setActiveTab] = useState<'VALIDATE' | 'PRODUCTS' | 'BONUS' | 'PRICES' | 'GATE_VALIDATE'>('VALIDATE');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'VALIDATED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [showPriceListForm, setShowPriceListForm] = useState(false);
+  const [editPriceList, setEditPriceList] = useState<Partial<PriceList>>({});
+  const [isEditingPriceList, setIsEditingPriceList] = useState<string | null>(null);
+  const [viewingHistory, setViewingHistory] = useState<string | null>(null);
+  const [priceHistory, setPriceHistory] = useState<PriceHistory[]>([]);
+  const [loading, setLoading] = useState(false);
   
   const [showOrderForm, setShowOrderForm] = useState(false);
   const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
@@ -191,6 +305,550 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
                 </div>
                 
                 <div className="flex bg-slate-100 p-1 rounded-xl">
+                  {[ 
+                    { id: 'ALL', label: 'Todos' },
+                    { id: 'PENDING', label: 'Pendientes' },
+                    { id: 'VALIDATED', label: 'Validados' }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setStatusFilter(f.id as any)}
+                      className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${statusFilter === f.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+             </div>
+
+             <button 
+              onClick={openNewOrder}
+              className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center gap-2 hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all w-full md:w-auto justify-center"
+             >
+               <PlusCircle size={18} /> Nueva Comanda
+             </button>
+          </div>
+
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">ID / Fecha</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Importe</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Estado</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">Sin movimientos registrados</td>
+                  </tr>
+                ) : filteredOrders.map(order => (
+                  <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-8 py-5">
+                      <p className="font-mono text-xs font-bold text-slate-400">#ORD-{order.id.toString().substr(0, 6).toUpperCase()}</p>
+                      <p className="text-[10px] font-bold text-slate-300 mt-1">{new Date(order.createdAt).toLocaleDateString()}</p>
+                    </td>
+                    <td className="px-8 py-5 uppercase font-black text-slate-800 text-sm">{order.customerName}</td>
+                    <td className="px-8 py-5 font-black text-slate-900">${order.totalAmount.toLocaleString()}</td>
+                    <td className="px-8 py-5 text-center">
+                      <span className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest border ${
+                        order.status === OrderStatus.PENDING ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                        order.status === OrderStatus.VALIDATED ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                        'bg-slate-100 text-slate-500 border-slate-200'
+                      }`}>
+                        {order.status}
+                      </span>
+                    </td>
+                    <td className="px-8 py-5 text-right space-x-2">
+                       <button onClick={() => setViewingOrder(order)} className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-blue-600 shadow-sm transition-all"><Search size={16}/></button>
+                       {(order.status === OrderStatus.PENDING || order.status === OrderStatus.VALIDATED) && (
+                         <>
+                          <button onClick={() => openEditOrder(order)} className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-blue-600 shadow-sm"><Edit3 size={16}/></button>
+                          {order.status === OrderStatus.PENDING && (
+                            <button onClick={() => validateOrder(order)} className="p-3 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm"><CheckCircle2 size={16}/></button>
+                          )}
+                         </>
+                       )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'PRICES' && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex justify-between items-center bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
+            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+              <Tag size={20} className="text-blue-500" /> Gestión de Listas de Precios
+            </h2>
+            <button 
+              onClick={() => setShowPriceListForm(true)}
+              className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center gap-2 hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all"
+            >
+              <PlusCircle size={18} /> Nueva Lista
+            </button>
+          </div>
+
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Descripción</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Última Actualización</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {priceLists.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">No hay listas de precios registradas</td>
+                  </tr>
+                ) : priceLists.map(list => (
+                  <tr key={list.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-8 py-5">
+                      <p className="font-black text-slate-800 uppercase text-sm">{list.name}</p>
+                      <p className="font-mono text-xs font-bold text-slate-400 mt-1">ID: {list.id}</p>
+                    </td>
+                    <td className="px-8 py-5 text-slate-600 text-sm">{list.description || '-'}
+                    </td>
+                    <td className="px-8 py-5 text-slate-600 text-sm">
+                      {list.updatedAt ? format(new Date(list.updatedAt), 'dd/MM/yyyy HH:mm') : 'N/A'}
+                    </td>
+                    <td className="px-8 py-5 text-right space-x-2">
+                      <button 
+                        onClick={() => {
+                          setEditPriceList(list);
+                          setIsEditingPriceList(list.id);
+                          setShowPriceListForm(true);
+                        }}
+                        className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-blue-600 shadow-sm transition-all"
+                      >
+                        <Edit3 size={16} />
+                      </button>
+                      <button 
+                        onClick={() => exportToPDF(list)}
+                        className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-emerald-600 shadow-sm transition-all"
+                      >
+                        <Download size={16} />
+                      </button>
+                      <button 
+                        onClick={() => fetchPriceHistory(list.id)}
+                        className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-purple-600 shadow-sm transition-all"
+                      >
+                        <HistoryIcon size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {showPriceListForm && (
+        <AnimatePresence>
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 50 }}
+              className="bg-white w-full max-w-xl rounded-[3rem] shadow-2xl p-10"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">
+                  {isEditingPriceList ? 'Editar Lista de Precios' : 'Nueva Lista de Precios'}
+                </h2>
+                <button 
+                  onClick={() => {
+                    setShowPriceListForm(false);
+                    setIsEditingPriceList(null);
+                    setEditPriceList({});
+                  }}
+                  className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2">Nombre de la Lista</label>
+                  <input 
+                    type="text" 
+                    value={editPriceList.name || ''}
+                    onChange={e => setEditPriceList(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-800 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2">Descripción (Opcional)</label>
+                  <textarea 
+                    value={editPriceList.description || ''}
+                    onChange={e => setEditPriceList(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-800 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all min-h-[100px]"
+                  ></textarea>
+                </div>
+                <button 
+                  onClick={handleSavePriceList}
+                  disabled={loading}
+                  className="w-full py-5 bg-blue-600 text-white font-black uppercase tracking-[0.2em] text-xs rounded-2xl shadow-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-3 disabled:opacity-20"
+                >
+                  {loading ? 'Guardando...' : <Save size={20} />} Guardar Lista
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>
+      )}
+
+      {viewingHistory && (
+        <AnimatePresence>
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 50 }}
+              className="bg-white w-full max-w-3xl rounded-[3rem] shadow-2xl p-10"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                  <HistoryIcon size={24} className="text-purple-500" /> Historial de Precios
+                </h2>
+                <button 
+                  onClick={() => setViewingHistory(null)}
+                  className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                {loading ? (
+                  <div className="p-10 text-center text-slate-300 font-black uppercase tracking-widest">Cargando historial...</div>
+                ) : priceHistory.length === 0 ? (
+                  <div className="p-10 text-center text-slate-300 font-black uppercase tracking-widest">No hay historial de precios para esta lista.</div>
+                ) : priceHistory.map((entry, index) => (
+                  <div key={index} className="bg-slate-50 p-6 rounded-2xl border border-slate-100 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="font-black text-slate-800 uppercase text-sm">{products.find(p => p.id === entry.product_id)?.name || 'Producto Desconocido'}</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 mt-1">
+                        <Calendar size={12} /> {format(new Date(entry.effective_date), 'dd/MM/yyyy HH:mm')}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xl font-black text-slate-900 tracking-tighter">${entry.price.toLocaleString()}</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Precio Anterior</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>
+      )}
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm gap-6">
+             <div className="flex items-center gap-4">
+                <div className="relative">
+                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                   <input 
+                     type="text" 
+                     placeholder="Buscar comanda..." 
+                     value={searchQuery}
+                     onChange={e => setSearchQuery(e.target.value)}
+                     className="pl-12 pr-6 py-3 border border-slate-100 bg-slate-50 rounded-2xl focus:ring-4 focus:ring-blue-500/10 outline-none w-64 font-medium transition-all"
+                   />
+                </div>
+                
+                <div className="flex bg-slate-100 p-1 rounded-xl">
+                  {[ 
+                    { id: 'ALL', label: 'Todos' },
+                    { id: 'PENDING', label: 'Pendientes' },
+                    { id: 'VALIDATED', label: 'Validados' }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setStatusFilter(f.id as any)}
+                      className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${statusFilter === f.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+             </div>
+
+             <button 
+              onClick={openNewOrder}
+              className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center gap-2 hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all w-full md:w-auto justify-center"
+             >
+               <PlusCircle size={18} /> Nueva Comanda
+             </button>
+          </div>
+
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">ID / Fecha</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Importe</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Estado</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">Sin movimientos registrados</td>
+                  </tr>
+                ) : filteredOrders.map(order => (
+                  <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-8 py-5">
+                      <p className="font-mono text-xs font-bold text-slate-400">#ORD-{order.id.toString().substr(0, 6).toUpperCase()}</p>
+                      <p className="text-[10px] font-bold text-slate-300 mt-1">{new Date(order.createdAt).toLocaleDateString()}</p>
+                    </td>
+                    <td className="px-8 py-5 uppercase font-black text-slate-800 text-sm">{order.customerName}</td>
+                    <td className="px-8 py-5 font-black text-slate-900">${order.totalAmount.toLocaleString()}</td>
+                    <td className="px-8 py-5 text-center">
+                      <span className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest border ${
+                        order.status === OrderStatus.PENDING ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                        order.status === OrderStatus.VALIDATED ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                        'bg-slate-100 text-slate-500 border-slate-200'
+                      }`}>
+                        {order.status}
+                      </span>
+                    </td>
+                    <td className="px-8 py-5 text-right space-x-2">
+                       <button onClick={() => setViewingOrder(order)} className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-blue-600 shadow-sm transition-all"><Search size={16}/></button>
+                       {(order.status === OrderStatus.PENDING || order.status === OrderStatus.VALIDATED) && (
+                         <>
+                          <button onClick={() => openEditOrder(order)} className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-blue-600 shadow-sm"><Edit3 size={16}/></button>
+                          {order.status === OrderStatus.PENDING && (
+                            <button onClick={() => validateOrder(order)} className="p-3 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm"><CheckCircle2 size={16}/></button>
+                          )}
+                         </>
+                       )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'PRICES' && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex justify-between items-center bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
+            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+              <Tag size={20} className="text-blue-500" /> Gestión de Listas de Precios
+            </h2>
+            <button 
+              onClick={() => setShowPriceListForm(true)}
+              className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center gap-2 hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all"
+            >
+              <PlusCircle size={18} /> Nueva Lista
+            </button>
+          </div>
+
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Descripción</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Última Actualización</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {priceLists.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">No hay listas de precios registradas</td>
+                  </tr>
+                ) : priceLists.map(list => (
+                  <tr key={list.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-8 py-5">
+                      <p className="font-black text-slate-800 uppercase text-sm">{list.name}</p>
+                      <p className="font-mono text-xs font-bold text-slate-400 mt-1">ID: {list.id}</p>
+                    </td>
+                    <td className="px-8 py-5 text-slate-600 text-sm">{list.description || '-'}
+                    </td>
+                    <td className="px-8 py-5 text-slate-600 text-sm">
+                      {list.updatedAt ? format(new Date(list.updatedAt), 'dd/MM/yyyy HH:mm') : 'N/A'}
+                    </td>
+                    <td className="px-8 py-5 text-right space-x-2">
+                      <button 
+                        onClick={() => {
+                          setEditPriceList(list);
+                          setIsEditingPriceList(list.id);
+                          setShowPriceListForm(true);
+                        }}
+                        className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-blue-600 shadow-sm transition-all"
+                      >
+                        <Edit3 size={16} />
+                      </button>
+                      <button 
+                        onClick={() => exportToPDF(list)}
+                        className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-emerald-600 shadow-sm transition-all"
+                      >
+                        <Download size={16} />
+                      </button>
+                      <button 
+                        onClick={() => fetchPriceHistory(list.id)}
+                        className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-purple-600 shadow-sm transition-all"
+                      >
+                        <HistoryIcon size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {showPriceListForm && (
+        <AnimatePresence>
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 50 }}
+              className="bg-white w-full max-w-xl rounded-[3rem] shadow-2xl p-10"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">
+                  {isEditingPriceList ? 'Editar Lista de Precios' : 'Nueva Lista de Precios'}
+                </h2>
+                <button 
+                  onClick={() => {
+                    setShowPriceListForm(false);
+                    setIsEditingPriceList(null);
+                    setEditPriceList({});
+                  }}
+                  className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2">Nombre de la Lista</label>
+                  <input 
+                    type="text" 
+                    value={editPriceList.name || ''}
+                    onChange={e => setEditPriceList(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-800 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2">Descripción (Opcional)</label>
+                  <textarea 
+                    value={editPriceList.description || ''}
+                    onChange={e => setEditPriceList(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-800 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all min-h-[100px]"
+                  ></textarea>
+                </div>
+                <button 
+                  onClick={handleSavePriceList}
+                  disabled={loading}
+                  className="w-full py-5 bg-blue-600 text-white font-black uppercase tracking-[0.2em] text-xs rounded-2xl shadow-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-3 disabled:opacity-20"
+                >
+                  {loading ? 'Guardando...' : <Save size={20} />} Guardar Lista
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>
+      )}
+
+      {viewingHistory && (
+        <AnimatePresence>
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 50 }}
+              className="bg-white w-full max-w-3xl rounded-[3rem] shadow-2xl p-10"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                  <HistoryIcon size={24} className="text-purple-500" /> Historial de Precios
+                </h2>
+                <button 
+                  onClick={() => setViewingHistory(null)}
+                  className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                {loading ? (
+                  <div className="p-10 text-center text-slate-300 font-black uppercase tracking-widest">Cargando historial...</div>
+                ) : priceHistory.length === 0 ? (
+                  <div className="p-10 text-center text-slate-300 font-black uppercase tracking-widest">No hay historial de precios para esta lista.</div>
+                ) : priceHistory.map((entry, index) => (
+                  <div key={index} className="bg-slate-50 p-6 rounded-2xl border border-slate-100 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="font-black text-slate-800 uppercase text-sm">{products.find(p => p.id === entry.product_id)?.name || 'Producto Desconocido'}</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 mt-1">
+                        <Calendar size={12} /> {format(new Date(entry.effective_date), 'dd/MM/yyyy HH:mm')}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xl font-black text-slate-900 tracking-tighter">${entry.price.toLocaleString()}</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Precio Anterior</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>
+      )}
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm gap-6">
+             <div className="flex items-center gap-4">
+                <div className="relative">
+                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                   <input 
+                     type="text" 
+                     placeholder="Buscar comanda..." 
+                     value={searchQuery}
+                     onChange={e => setSearchQuery(e.target.value)}
+                     className="pl-12 pr-6 py-3 border border-slate-100 bg-slate-50 rounded-2xl focus:ring-4 focus:ring-blue-500/10 outline-none w-64 font-medium transition-all"
+                   />
+                </div>
+                
+                <div className="flex bg-slate-100 p-1 rounded-xl">
                   {[
                     { id: 'ALL', label: 'Todos' },
                     { id: 'PENDING', label: 'Pendientes' },
@@ -265,6 +923,188 @@ const OrderCenterView: React.FC<Props> = ({ orders, updateOrder, addOrder, produ
             </table>
           </div>
         </div>
+      )}
+
+      {activeTab === 'PRICES' && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex justify-between items-center bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
+            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+              <Tag size={20} className="text-blue-500" /> Gestión de Listas de Precios
+            </h2>
+            <button 
+              onClick={() => setShowPriceListForm(true)}
+              className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center gap-2 hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all"
+            >
+              <PlusCircle size={18} /> Nueva Lista
+            </button>
+          </div>
+
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Descripción</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Última Actualización</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {priceLists.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">No hay listas de precios registradas</td>
+                  </tr>
+                ) : priceLists.map(list => (
+                  <tr key={list.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-8 py-5">
+                      <p className="font-black text-slate-800 uppercase text-sm">{list.name}</p>
+                      <p className="font-mono text-xs font-bold text-slate-400 mt-1">ID: {list.id}</p>
+                    </td>
+                    <td className="px-8 py-5 text-slate-600 text-sm">{list.description || '-'}
+                    </td>
+                    <td className="px-8 py-5 text-slate-600 text-sm">
+                      {list.updatedAt ? format(new Date(list.updatedAt), 'dd/MM/yyyy HH:mm') : 'N/A'}
+                    </td>
+                    <td className="px-8 py-5 text-right space-x-2">
+                      <button 
+                        onClick={() => {
+                          setEditPriceList(list);
+                          setIsEditingPriceList(list.id);
+                          setShowPriceListForm(true);
+                        }}
+                        className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-blue-600 shadow-sm transition-all"
+                      >
+                        <Edit3 size={16} />
+                      </button>
+                      <button 
+                        onClick={() => exportToPDF(list)}
+                        className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-emerald-600 shadow-sm transition-all"
+                      >
+                        <Download size={16} />
+                      </button>
+                      <button 
+                        onClick={() => fetchPriceHistory(list.id)}
+                        className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-purple-600 shadow-sm transition-all"
+                      >
+                        <HistoryIcon size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {showPriceListForm && (
+        <AnimatePresence>
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 50 }}
+              className="bg-white w-full max-w-xl rounded-[3rem] shadow-2xl p-10"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">
+                  {isEditingPriceList ? 'Editar Lista de Precios' : 'Nueva Lista de Precios'}
+                </h2>
+                <button 
+                  onClick={() => {
+                    setShowPriceListForm(false);
+                    setIsEditingPriceList(null);
+                    setEditPriceList({});
+                  }}
+                  className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2">Nombre de la Lista</label>
+                  <input 
+                    type="text" 
+                    value={editPriceList.name || ''}
+                    onChange={e => setEditPriceList(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-800 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2">Descripción (Opcional)</label>
+                  <textarea 
+                    value={editPriceList.description || ''}
+                    onChange={e => setEditPriceList(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-800 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all min-h-[100px]"
+                  ></textarea>
+                </div>
+                <button 
+                  onClick={handleSavePriceList}
+                  disabled={loading}
+                  className="w-full py-5 bg-blue-600 text-white font-black uppercase tracking-[0.2em] text-xs rounded-2xl shadow-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-3 disabled:opacity-20"
+                >
+                  {loading ? 'Guardando...' : <Save size={20} />} Guardar Lista
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>
+      )}
+
+      {viewingHistory && (
+        <AnimatePresence>
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 50 }}
+              className="bg-white w-full max-w-3xl rounded-[3rem] shadow-2xl p-10"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                  <HistoryIcon size={24} className="text-purple-500" /> Historial de Precios
+                </h2>
+                <button 
+                  onClick={() => setViewingHistory(null)}
+                  className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                {loading ? (
+                  <div className="p-10 text-center text-slate-300 font-black uppercase tracking-widest">Cargando historial...</div>
+                ) : priceHistory.length === 0 ? (
+                  <div className="p-10 text-center text-slate-300 font-black uppercase tracking-widest">No hay historial de precios para esta lista.</div>
+                ) : priceHistory.map((entry, index) => (
+                  <div key={index} className="bg-slate-50 p-6 rounded-2xl border border-slate-100 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="font-black text-slate-800 uppercase text-sm">{products.find(p => p.id === entry.product_id)?.name || 'Producto Desconocido'}</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 mt-1">
+                        <Calendar size={12} /> {format(new Date(entry.effective_date), 'dd/MM/yyyy HH:mm')}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xl font-black text-slate-900 tracking-tighter">${entry.price.toLocaleString()}</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Precio Anterior</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>
       )}
 
       {activeTab === 'GATE_VALIDATE' && (
