@@ -27,6 +27,8 @@ import { UserRole, Order, Customer, OrderStatus, GateEntry, AuditLog, Product, P
 import { supabase, isSupabaseConfigured } from './supabase';
 
 import DistributorView from './components/DistributorView';
+import UserManagement from './components/UserManagement';
+import { AppUser } from './types';
 import GateView from './components/GateView';
 import OrderCenterView from './components/OrderCenterView';
 import FactoryView from './components/FactoryView';
@@ -273,6 +275,7 @@ const App: React.FC = () => {
             {(currentUser.role === UserRole.FACTORY || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/factory" icon={<Box size={20} />} label="Producción" />}
             {(currentUser.role === UserRole.DISPATCH || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/dispatch" icon={<Truck size={20} />} label="Despacho de Entregas" />}
             {(currentUser.role === UserRole.COLLECTION || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/collection" icon={<BadgeDollarSign size={20} />} label="Caja y Cobranza" />}
+            {currentUser.role === UserRole.ADMIN && <SidebarLink to="/users" icon={<UserCircle size={20} />} label="Gestión de Usuarios" />}
             {currentUser.role === UserRole.ADMIN && <SidebarLink to="/audit" icon={<Github size={20} />} label="Sincronización Cloud" />}
           </div>
 
@@ -328,7 +331,10 @@ const App: React.FC = () => {
               <Route path="/orders" element={<OrdersTable orders={displayOrders} role={currentUser.role} />} />
               
               {currentUser.role === UserRole.ADMIN && (
-                <Route path="/catalog" element={<ProductManagement products={products} priceLists={priceLists} onRefresh={fetchData} />} />
+                <>
+                  <Route path="/catalog" element={<ProductManagement products={products} priceLists={priceLists} onRefresh={fetchData} />} />
+                  <Route path="/users" element={<UserManagement currentUser={currentUser} />} />
+                </>
               )}
 
               {(currentUser.role === UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && (
@@ -484,12 +490,63 @@ const Login: React.FC<{onLogin: (user: {name: string, role: UserRole, email: str
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>(UserRole.DISTRIBUTOR);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // En una app real aquí iría la lógica de Supabase Auth
-    // Por ahora simulamos el login exitoso
-    onLogin({ name: username || 'Usuario', role, email });
+    setError('');
+    setSuccess('');
+
+    // Mock implementation using localStorage
+    const storedUsersStr = localStorage.getItem('erp_users');
+    let users: AppUser[] = storedUsersStr ? JSON.parse(storedUsersStr) : [];
+
+    if (isRegistering) {
+      if (users.find(u => u.email === email)) {
+        setError('El correo ya está registrado.');
+        return;
+      }
+      
+      const newUser: AppUser = {
+        id: Math.random().toString(36).substr(2, 9),
+        email,
+        name: username || 'Usuario',
+        role,
+        isApproved: false, // Requiere aprobación del admin
+        createdAt: new Date().toISOString()
+      };
+      
+      // Si es el primer usuario, lo hacemos admin y lo aprobamos automáticamente
+      if (users.length === 0) {
+        newUser.role = UserRole.ADMIN;
+        newUser.isApproved = true;
+      }
+
+      users.push(newUser);
+      localStorage.setItem('erp_users', JSON.stringify(users));
+      
+      if (newUser.isApproved) {
+        onLogin({ name: newUser.name, role: newUser.role, email: newUser.email });
+      } else {
+        setSuccess('Cuenta creada. Espere a que un administrador apruebe su acceso.');
+        setIsRegistering(false);
+        setPassword('');
+      }
+    } else {
+      // Login
+      const user = users.find(u => u.email === email);
+      if (!user) {
+        setError('Usuario no encontrado. Verifique su correo.');
+        return;
+      }
+      if (!user.isApproved) {
+        setError('Su cuenta aún no ha sido aprobada por un administrador.');
+        return;
+      }
+      // En una app real verificaríamos la contraseña aquí
+      onLogin({ name: user.name, role: user.role, email: user.email });
+    }
   };
 
   return (
@@ -502,6 +559,18 @@ const Login: React.FC<{onLogin: (user: {name: string, role: UserRole, email: str
           <h1 className="text-4xl font-black text-slate-800 tracking-tight mb-2 uppercase">CHAZARRETA <span className="text-blue-600">ERP</span></h1>
           <p className="text-slate-500 font-medium">{isRegistering ? 'Cree su cuenta de acceso' : 'Inicie sesión para continuar'}</p>
         </div>
+
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl text-xs font-bold uppercase tracking-widest text-center flex items-center justify-center gap-2">
+            <AlertCircle size={16} /> {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-2xl text-xs font-bold uppercase tracking-widest text-center flex items-center justify-center gap-2">
+            <CheckCircle2 size={16} /> {success}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -530,20 +599,6 @@ const Login: React.FC<{onLogin: (user: {name: string, role: UserRole, email: str
             </div>
           )}
 
-          {!isRegistering && (
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-4">Nombre de Usuario</label>
-              <input 
-                type="text" 
-                required
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none font-bold transition-all"
-                placeholder="Su usuario"
-              />
-            </div>
-          )}
-
           <div>
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-4">Contraseña</label>
             <input 
@@ -556,34 +611,39 @@ const Login: React.FC<{onLogin: (user: {name: string, role: UserRole, email: str
             />
           </div>
 
-          <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-4">Puesto de Trabajo</label>
-            <select 
-              value={role}
-              onChange={e => setRole(e.target.value as UserRole)}
-              className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none font-bold transition-all appearance-none"
-            >
-              <option value={UserRole.DISTRIBUTOR}>Distribuidor / Sucursal</option>
-              <option value={UserRole.GATE}>Portería</option>
-              <option value={UserRole.ORDER_CENTER}>Centro de Pedidos</option>
-              <option value={UserRole.FACTORY}>Producción</option>
-              <option value={UserRole.DISPATCH}>Despacho</option>
-              <option value={UserRole.COLLECTION}>Cobranza</option>
-              <option value={UserRole.ADMIN}>Administrador</option>
-            </select>
-          </div>
+          {isRegistering && (
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-4">Puesto de Trabajo Solicitado</label>
+              <select 
+                value={role}
+                onChange={e => setRole(e.target.value as UserRole)}
+                className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none font-bold transition-all appearance-none"
+              >
+                <option value={UserRole.DISTRIBUTOR}>Distribuidor / Sucursal</option>
+                <option value={UserRole.GATE}>Portería</option>
+                <option value={UserRole.ORDER_CENTER}>Centro de Pedidos</option>
+                <option value={UserRole.FACTORY}>Producción</option>
+                <option value={UserRole.DISPATCH}>Despacho</option>
+                <option value={UserRole.COLLECTION}>Cobranza</option>
+              </select>
+            </div>
+          )}
 
           <button 
             type="submit"
             className="w-full py-5 bg-blue-600 text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-blue-900/20 hover:bg-blue-700 transition-all active:scale-95 mt-4"
           >
-            {isRegistering ? 'Crear Cuenta' : 'Entrar al Sistema'}
+            {isRegistering ? 'Solicitar Acceso' : 'Entrar al Sistema'}
           </button>
         </form>
 
         <div className="mt-8 text-center">
           <button 
-            onClick={() => setIsRegistering(!isRegistering)}
+            onClick={() => {
+              setIsRegistering(!isRegistering);
+              setError('');
+              setSuccess('');
+            }}
             className="text-slate-400 font-bold uppercase text-[10px] tracking-widest hover:text-blue-600 transition-colors"
           >
             {isRegistering ? '¿Ya tiene cuenta? Inicie sesión' : '¿No tiene cuenta? Regístrese aquí'}

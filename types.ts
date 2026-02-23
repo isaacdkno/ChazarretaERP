@@ -9,6 +9,15 @@ export enum UserRole {
   ADMIN = 'ADMIN'
 }
 
+export interface AppUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  isApproved: boolean;
+  createdAt: string;
+}
+
 export enum OrderStatus {
   PENDING = 'PENDING',
   VALIDATED = 'VALIDATED',
