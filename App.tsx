@@ -85,7 +85,8 @@ const App: React.FC = () => {
         setPriceLists(lists.map(l => ({
           id: l.id,
           name: l.name,
-          description: l.description || ''
+          description: l.description || '',
+          updatedAt: l.updated_at || new Date().toISOString()
         })));
       }
 
