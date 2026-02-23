@@ -248,7 +248,7 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
     doc.setFontSize(12);
     doc.setTextColor(100, 116, 139);
     doc.text(`Lista de Precios: ${list.name.toUpperCase()}`, 14, 32);
-    doc.text(`Vigente desde: ${format(new Date(list.updatedAt), 'dd/MM/yyyy HH:mm')}`, 14, 40);
+    doc.text(`Vigente desde: ${format(new Date(list.updatedAt || new Date()), 'dd/MM/yyyy HH:mm')}`, 14, 40);
     
     const tableData = products.map(p => [
       p.name,
@@ -464,11 +464,11 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
                 <div className="space-y-3 mb-8">
                   <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
                     <span>Vigencia desde</span>
-                    <span className="text-slate-900">{format(new Date(list.updatedAt), 'dd/MM/yyyy')}</span>
+                    <span className="text-slate-900">{format(new Date(list.updatedAt || new Date()), 'dd/MM/yyyy')}</span>
                   </div>
                   <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
                     <span>Última actualización</span>
-                    <span className="text-slate-900">{format(new Date(list.updatedAt), 'HH:mm')} hs</span>
+                    <span className="text-slate-900">{format(new Date(list.updatedAt || new Date()), 'HH:mm')} hs</span>
                   </div>
                 </div>
 
