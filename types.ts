@@ -47,6 +47,15 @@ export interface PriceList {
   id: string;
   name: string;
   description: string;
+  updatedAt: string;
+}
+
+export interface PriceHistory {
+  id: string;
+  priceListId: string;
+  productId: string;
+  price: number;
+  effectiveDate: string;
 }
 
 export interface OrderItem {

@@ -14,10 +14,19 @@ import {
   CheckCircle2, 
   AlertCircle,
   ChevronRight,
-  Settings2
+  Settings2,
+  FileText,
+  Download,
+  History as HistoryIcon,
+  Calendar,
+  ArrowLeft
 } from 'lucide-react';
-import { Product, PriceList } from '../types';
+import { Product, PriceList, PriceHistory } from '../types';
 import { supabase } from '../supabase';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { format } from 'date-fns';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface Props {
   products: Product[];
@@ -25,16 +34,52 @@ interface Props {
   onRefresh: () => void;
 }
 
+const PriceInput: React.FC<{
+  initialValue: number;
+  onSave: (value: number) => void;
+}> = ({ initialValue, onSave }) => {
+  const [value, setValue] = useState(initialValue.toString());
+
+  useEffect(() => {
+    setValue(initialValue.toString());
+  }, [initialValue]);
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs font-black text-slate-400">$</span>
+      <input 
+        type="number"
+        className="w-full bg-transparent font-black text-slate-800 outline-none"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={() => {
+          const numValue = parseFloat(value) || 0;
+          if (numValue !== initialValue) {
+            onSave(numValue);
+          }
+        }}
+      />
+    </div>
+  );
+};
+
 const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh }) => {
   const [activeTab, setActiveTab] = useState<'PRODUCTS' | 'PRICE_LISTS'>('PRODUCTS');
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBrand, setSelectedBrand] = useState<'TODAS' | 'La Fornarina' | 'Villecco'>('TODAS');
   const [loading, setLoading] = useState(false);
+  const [viewingHistory, setViewingHistory] = useState<string | null>(null);
+  const [priceHistory, setPriceHistory] = useState<PriceHistory[]>([]);
 
   // Form states for new/edit product
   const [editProduct, setEditProduct] = useState<Partial<Product>>({});
   const [showNewForm, setShowNewForm] = useState(false);
+
+  // Form states for new/edit price list
+  const [editPriceList, setEditPriceList] = useState<Partial<PriceList>>({});
+  const [showPriceListForm, setShowPriceListForm] = useState(false);
+  const [isEditingPriceList, setIsEditingPriceList] = useState<string | null>(null);
 
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -42,6 +87,35 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
     const matchesBrand = selectedBrand === 'TODAS' || p.brand === selectedBrand;
     return matchesSearch && matchesBrand;
   });
+
+  const fetchPriceHistory = async (listId: string) => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('price_history')
+        .select('*')
+        .eq('price_list_id', listId)
+        .order('effective_date', { ascending: false });
+      
+      if (error) throw error;
+      
+      const mappedData: PriceHistory[] = (data || []).map(item => ({
+        id: item.id,
+        priceListId: item.price_list_id,
+        productId: item.product_id,
+        price: item.price,
+        effectiveDate: item.effective_date
+      }));
+
+      setPriceHistory(mappedData);
+      setViewingHistory(listId);
+    } catch (error) {
+      console.error(error);
+      alert("Error al cargar el historial");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSaveProduct = async () => {
     const name = editProduct.name?.trim();
@@ -71,7 +145,6 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
           id: 'p-' + Math.random().toString(36).substr(2, 5)
         }]).select().single();
         
-        // Initialize prices for the new product
         if (data) {
           const initialPrices = priceLists.map(list => ({
             product_id: data.id,
@@ -94,14 +167,107 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
     }
   };
 
-  const handleUpdatePrice = async (productId: string, listId: string, price: number) => {
+  const handleUpdatePrice = async (productId: string, listId: string, newPrice: number) => {
     try {
+      const product = products.find(p => p.id === productId);
+      const oldPrice = product?.prices[listId] || 0;
+
+      if (oldPrice === newPrice) return;
+
+      await supabase.from('price_history').insert([{
+        price_list_id: listId,
+        product_id: productId,
+        price: oldPrice,
+        effective_date: new Date().toISOString()
+      }]);
+
       await supabase.from('product_prices')
-        .upsert({ product_id: productId, price_list_id: listId, price });
+        .upsert({ product_id: productId, price_list_id: listId, price: newPrice });
+
+      await supabase.from('price_lists')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', listId);
+
       onRefresh();
     } catch (error) {
       console.error(error);
     }
+  };
+
+  const handleSavePriceList = async () => {
+    const name = editPriceList.name?.trim();
+    if (!name) {
+      alert("El nombre de la lista es obligatorio");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const listData = {
+        name,
+        description: editPriceList.description || '',
+        updated_at: new Date().toISOString()
+      };
+
+      if (isEditingPriceList) {
+        await supabase.from('price_lists').update(listData).eq('id', isEditingPriceList);
+      } else {
+        const newListId = 'list-' + Math.random().toString(36).substr(2, 5);
+        await supabase.from('price_lists').insert([{
+          ...listData,
+          id: newListId
+        }]);
+
+        const initialPrices = products.map(p => ({
+          product_id: p.id,
+          price_list_id: newListId,
+          price: 0
+        }));
+        await supabase.from('product_prices').insert(initialPrices);
+      }
+
+      onRefresh();
+      setShowPriceListForm(false);
+      setIsEditingPriceList(null);
+      setEditPriceList({});
+    } catch (error) {
+      console.error(error);
+      alert("Error al guardar la lista de precios");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const exportToPDF = (list: PriceList) => {
+    const doc = new jsPDF();
+    
+    doc.setFontSize(20);
+    doc.setTextColor(15, 23, 42);
+    doc.text('CHAZARRETA ERP', 14, 22);
+    
+    doc.setFontSize(12);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Lista de Precios: ${list.name.toUpperCase()}`, 14, 32);
+    doc.text(`Vigente desde: ${format(new Date(list.updatedAt), 'dd/MM/yyyy HH:mm')}`, 14, 40);
+    
+    const tableData = products.map(p => [
+      p.name,
+      p.brand,
+      p.category,
+      `$${p.prices[list.id]?.toLocaleString() || '0'}`
+    ]);
+
+    autoTable(doc, {
+      startY: 50,
+      head: [['Producto', 'Marca', 'Categoría', 'Precio']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { top: 50 },
+    });
+
+    doc.save(`Lista_Precios_${list.name.replace(/\s+/g, '_')}_${format(new Date(), 'yyyyMMdd')}.pdf`);
   };
 
   return (
@@ -130,7 +296,6 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
 
       {activeTab === 'PRODUCTS' ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Listado de Productos */}
           <div className="lg:col-span-8 space-y-6">
             <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
               <div className="p-6 border-b border-slate-100 bg-slate-50/50 space-y-4">
@@ -211,20 +376,14 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
                       </div>
                     </div>
 
-                    {/* Precios por Lista */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       {priceLists.map(list => (
                         <div key={list.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                           <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">{list.name}</p>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-slate-400">$</span>
-                            <input 
-                              type="number"
-                              className="w-full bg-transparent font-black text-slate-800 outline-none"
-                              value={product.prices[list.id] || 0}
-                              onChange={e => handleUpdatePrice(product.id, list.id, parseFloat(e.target.value) || 0)}
-                            />
-                          </div>
+                          <PriceInput 
+                            initialValue={product.prices[list.id] || 0}
+                            onSave={newPrice => handleUpdatePrice(product.id, list.id, newPrice)}
+                          />
                         </div>
                       ))}
                     </div>
@@ -234,7 +393,6 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
             </div>
           </div>
 
-          {/* Sidebar Info */}
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl">
               <Settings2 size={40} className="mb-6 text-blue-500 opacity-50" />
@@ -266,27 +424,74 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl p-20 text-center">
-          <Tag size={64} className="mx-auto mb-6 text-slate-200" />
-          <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight mb-2">Configuración de Listas</h3>
-          <p className="text-slate-500 max-w-md mx-auto mb-8">
-            Las listas de precios permiten segmentar tus clientes (Distribuidores, Supermercados, etc.) y asignarles valores diferenciados automáticamente.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+        <div className="space-y-8">
+          <div className="flex justify-end">
+            <button 
+              onClick={() => {
+                setIsEditingPriceList(null);
+                setEditPriceList({});
+                setShowPriceListForm(true);
+              }}
+              className="px-6 py-3 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg"
+            >
+              <Plus size={16} /> Nueva Lista de Precios
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {priceLists.map(list => (
-              <div key={list.id} className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 text-left">
-                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-blue-600 shadow-sm mb-4">
-                  <ChevronRight size={20} />
+              <div key={list.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl hover:shadow-2xl transition-all group relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-6 opacity-0 group-hover:opacity-100 transition-all flex gap-2">
+                  <button 
+                    onClick={() => {
+                      setIsEditingPriceList(list.id);
+                      setEditPriceList(list);
+                      setShowPriceListForm(true);
+                    }}
+                    className="p-2 bg-slate-100 text-slate-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all"
+                  >
+                    <Edit3 size={16} />
+                  </button>
                 </div>
-                <h4 className="font-black text-slate-800 uppercase tracking-tight mb-1">{list.name}</h4>
-                <p className="text-[10px] text-slate-400 font-medium leading-relaxed">{list.description}</p>
+
+                <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 mb-6 group-hover:scale-110 transition-transform">
+                  <Tag size={28} />
+                </div>
+                
+                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-2">{list.name}</h3>
+                <p className="text-slate-500 text-xs font-medium mb-6 line-clamp-2">{list.description || 'Sin descripción'}</p>
+                
+                <div className="space-y-3 mb-8">
+                  <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <span>Vigencia desde</span>
+                    <span className="text-slate-900">{format(new Date(list.updatedAt), 'dd/MM/yyyy')}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <span>Última actualización</span>
+                    <span className="text-slate-900">{format(new Date(list.updatedAt), 'HH:mm')} hs</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    onClick={() => exportToPDF(list)}
+                    className="flex items-center justify-center gap-2 py-3 bg-slate-50 text-slate-600 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-50 hover:text-blue-600 transition-all"
+                  >
+                    <Download size={14} /> PDF
+                  </button>
+                  <button 
+                    onClick={() => fetchPriceHistory(list.id)}
+                    className="flex items-center justify-center gap-2 py-3 bg-slate-50 text-slate-600 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all"
+                  >
+                    <HistoryIcon size={14} /> Historial
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Modal de Nuevo/Editar Producto */}
       {showNewForm && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
@@ -396,6 +601,135 @@ const ProductManagement: React.FC<Props> = ({ products, priceLists, onRefresh })
           </div>
         </div>
       )}
+
+      {showPriceListForm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">
+                {isEditingPriceList ? 'Editar Lista' : 'Nueva Lista de Precios'}
+              </h2>
+              <button onClick={() => setShowPriceListForm(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+                <X size={20} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="p-8 space-y-6">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Nombre de la Lista</label>
+                <input 
+                  type="text"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10"
+                  value={editPriceList.name || ''}
+                  onChange={e => setEditPriceList({...editPriceList, name: e.target.value})}
+                  placeholder="Ej: Lista Minorista"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Descripción</label>
+                <textarea 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10 min-h-[100px]"
+                  value={editPriceList.description || ''}
+                  onChange={e => setEditPriceList({...editPriceList, description: e.target.value})}
+                  placeholder="Detalles sobre quién usa esta lista..."
+                />
+              </div>
+            </div>
+            <div className="p-8 bg-slate-50 flex gap-3">
+              <button 
+                onClick={() => setShowPriceListForm(false)}
+                className="flex-1 py-4 bg-white text-slate-500 font-black uppercase tracking-widest text-[10px] rounded-2xl border border-slate-200 hover:bg-slate-100 transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleSavePriceList}
+                disabled={loading}
+                className="flex-1 py-4 bg-blue-600 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl hover:bg-blue-700 transition-all shadow-xl flex items-center justify-center gap-2"
+              >
+                {loading ? 'Guardando...' : <Save size={16} />} Guardar Lista
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {viewingHistory && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-4">
+                  <button onClick={() => setViewingHistory(null)} className="p-2 hover:bg-white rounded-xl transition-all shadow-sm">
+                    <ArrowLeft size={20} className="text-slate-600" />
+                  </button>
+                  <div>
+                    <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">
+                      Historial de Precios
+                    </h2>
+                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
+                      {priceLists.find(l => l.id === viewingHistory)?.name}
+                    </p>
+                  </div>
+                </div>
+                <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600">
+                  <HistoryIcon size={24} />
+                </div>
+              </div>
+              
+              <div className="flex-1 overflow-auto p-8">
+                {priceHistory.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-4">
+                    <Calendar size={48} />
+                    <p className="font-black uppercase tracking-widest text-xs">No hay cambios registrados aún</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {priceHistory.map((item) => {
+                      const product = products.find(p => p.id === item.productId);
+                      return (
+                        <div key={item.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between hover:bg-white hover:shadow-md transition-all">
+                          <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-400 shadow-sm">
+                              <Package size={18} />
+                            </div>
+                            <div>
+                              <p className="font-black text-slate-800 uppercase text-xs">{product?.name || 'Producto Eliminado'}</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">{format(new Date(item.effectiveDate), 'dd/MM/yyyy HH:mm')} hs</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-lg font-black text-slate-900 tracking-tighter">${item.price.toLocaleString()}</p>
+                            <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest">Precio Anterior</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              
+              <div className="p-8 bg-slate-50 border-t border-slate-100">
+                <button 
+                  onClick={() => setViewingHistory(null)}
+                  className="w-full py-4 bg-slate-900 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl hover:bg-blue-600 transition-all shadow-xl"
+                >
+                  Cerrar Historial
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

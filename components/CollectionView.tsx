@@ -20,7 +20,7 @@ import {
   AlertTriangle,
   Clock
 } from 'lucide-react';
-import { Order, OrderStatus, Customer, PaymentReceipt } from '../types';
+import { Order, OrderStatus, Customer, PaymentReceipt, PriceList } from '../types';
 import { supabase } from '../supabase';
 
 interface Props {
@@ -28,9 +28,10 @@ interface Props {
   updateOrder: (order: Order) => void;
   customers: Customer[];
   setCustomers: React.Dispatch<React.SetStateAction<Customer[]>>;
+  priceLists: PriceList[];
 }
 
-const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCustomers }) => {
+const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCustomers, priceLists }) => {
   const [activeTab, setActiveTab] = useState<'COLLECTION' | 'ACCOUNTS'>('COLLECTION');
   const [paymentMode, setPaymentMode] = useState<'FIFO' | 'MANUAL'>('FIFO');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
@@ -201,6 +202,24 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
       alert("Error al procesar el cobro. Verifique la conexión.");
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const handleUpdateCustomerPriceList = async (customerId: string, priceListId: string) => {
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .update({ price_list_id: priceListId })
+        .eq('id', customerId);
+      
+      if (error) throw error;
+      
+      setCustomers(prev => prev.map(c => 
+        c.id === customerId ? { ...c, priceListId } : c
+      ));
+    } catch (err) {
+      console.error(err);
+      alert("Error al actualizar la lista de precios");
     }
   };
 
@@ -512,7 +531,7 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
                         )}
                       </div>
                       <div className="flex items-center gap-3">
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">#ORD-{order.id.toString().substr(0,6).toUpperCase()}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">#ORD-${order.id.toString().substr(0,6).toUpperCase()}</p>
                         <p className="text-[10px] text-slate-300 font-bold uppercase">{new Date(order.createdAt).toLocaleDateString()}</p>
                       </div>
                     </div>
@@ -581,6 +600,7 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
                   <tr>
                     <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Distribuidor</th>
                     <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Saldo Pendiente</th>
+                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Lista de Precios</th>
                     <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Comandas</th>
                     <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Último Pago</th>
                     <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Estado</th>
@@ -599,6 +619,17 @@ const CollectionView: React.FC<Props> = ({ orders, updateOrder, customers, setCu
                         </td>
                         <td className="px-8 py-6 text-right">
                           <p className="text-lg font-black text-slate-900 tracking-tighter">${customer.balance.toLocaleString()}</p>
+                        </td>
+                        <td className="px-8 py-6">
+                          <select 
+                            value={customer.priceListId}
+                            onChange={e => handleUpdateCustomerPriceList(customer.id, e.target.value)}
+                            className="w-full text-[10px] font-black uppercase bg-slate-50 border border-slate-200 rounded-xl p-2 outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
+                          >
+                            {priceLists.map(pl => (
+                              <option key={pl.id} value={pl.id}>{pl.name}</option>
+                            ))}
+                          </select>
                         </td>
                         <td className="px-8 py-6 text-center">
                           <span className="text-xs font-black text-slate-600 bg-slate-100 px-3 py-1 rounded-full">{pendingOrders.length}</span>
