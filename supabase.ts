@@ -8,8 +8,8 @@ import { createClient } from '@supabase/supabase-js';
  * Opción B (Rápida): Pega tus credenciales en las constantes 'HARDCODED_URL' y 'HARDCODED_KEY' abajo.
  */
 
-const HARDCODED_URL = ''; // Pega aquí tu Project URL si quieres que sea permanente
-const HARDCODED_KEY = ''; // Pega aquí tu Anon Key si quieres que sea permanente
+const HARDCODED_URL = 'https://ymxvpcfbobzvuwrdjlag.supabase.co'; // Pega aquí tu Project URL si quieres que sea permanente
+const HARDCODED_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlteHZwY2Zib2J6dnV3cmRqbGFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1MTQ4NDgsImV4cCI6MjA4NzA5MDg0OH0.c4SG61RPMvTYmAi9GuN7L873tzGKUlgOtbG_6Bwihfg'; // Pega aquí tu Anon Key si quieres que sea permanente
 
 const getSupabaseConfig = () => {
   // 1. Intentar obtener de variables de entorno (Vite / Proceso estándar)
