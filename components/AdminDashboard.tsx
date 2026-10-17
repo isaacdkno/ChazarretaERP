@@ -1,9 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Database, History, Terminal, Cloud, CheckCircle2, Copy, Play, AlertTriangle, Search, Activity, Server, Key, Link as LinkIcon, RefreshCw, Trash2, ExternalLink, Info, ShieldAlert, FileText, Printer } from 'lucide-react';
-import { AuditLog, Order, PaymentReceipt } from '../types';
+import { MOCK_PRICE_LISTS, MOCK_PRODUCTS, MOCK_CUSTOMERS } from '../constants';
 import { supabase, saveSupabaseConfig, clearSupabaseConfig, isSupabaseConfigured } from '../supabase';
-import { MOCK_PRODUCTS, MOCK_CUSTOMERS, MOCK_PRICE_LISTS } from '../constants';
+import { printHTML } from '../utils/print';
+import { AuditLog, Order, PaymentReceipt } from '../types';
+import { getPaymentReceipts } from '../services/supabaseService';
 
 interface Props {
   logs: AuditLog[];
@@ -13,11 +15,13 @@ interface Props {
 }
 
 const AdminDashboard: React.FC<Props> = ({ logs, onRefresh, dbReady, orders }) => {
-  const [activeTab, setActiveTab] = useState<'LOGS' | 'DATABASE' | 'RECEIPTS'>('DATABASE');
+  const [activeTab, setActiveTab] = useState<'LOGS' | 'DATABASE' | 'RECEIPTS' | 'USERS'>('DATABASE');
   const [isSeeding, setIsSeeding] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [receipts, setReceipts] = useState<PaymentReceipt[]>([]);
   const [loadingReceipts, setLoadingReceipts] = useState(false);
+  const [users, setUsers] = useState<any[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   
   const [configUrl, setConfigUrl] = useState(localStorage.getItem('supabase_url') || '');
   const [configKey, setConfigKey] = useState(localStorage.getItem('supabase_key') || '');
@@ -25,72 +29,111 @@ const AdminDashboard: React.FC<Props> = ({ logs, onRefresh, dbReady, orders }) =
   useEffect(() => {
     if (activeTab === 'RECEIPTS') {
       fetchReceipts();
+    } else if (activeTab === 'USERS') {
+      fetchUsers();
     }
   }, [activeTab]);
 
+  const fetchUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (!error && data) {
+        setUsers(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const approveUser = async (userId: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ is_approved: !currentStatus })
+        .eq('id', userId);
+      
+      if (error) throw error;
+      fetchUsers();
+    } catch (err) {
+      console.error(err);
+      alert("Error al actualizar estado del usuario.");
+    }
+  };
+
   const fetchReceipts = async () => {
     setLoadingReceipts(true);
-    const { data, error } = await supabase
-      .from('payment_receipts')
-      .select('*')
-      .order('createdAt', { ascending: false });
-    
-    if (!error && data) {
-      setReceipts(data);
+    try {
+      const { data, error } = await getPaymentReceipts();
+      if (!error && data) {
+        setReceipts(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingReceipts(false);
     }
-    setLoadingReceipts(false);
   };
 
   const printThermalTicket = (receipt: PaymentReceipt) => {
-    const win = window.open('', '_blank', 'width=400,height=600');
-    if (!win) return;
+    const rDate = new Date(receipt.createdAt);
+    const rDateStr = isNaN(rDate.getTime()) ? 'Fecha N/A' : rDate.toLocaleString();
+
     const html = `
-      <html>
-        <head>
-          <style>
-            @page { margin: 0; }
-            body { font-family: 'Courier New', Courier, monospace; width: 80mm; padding: 5mm; font-size: 12px; line-height: 1.2; }
-            .center { text-align: center; }
-            .bold { font-weight: bold; }
-            .line { border-bottom: 1px dashed #000; margin: 5px 0; }
-            .flex { display: flex; justify-content: space-between; }
-            .title { font-size: 16px; margin-bottom: 5px; }
-          </style>
-        </head>
-        <body>
-          <div class="center bold title">CHAZARRETA ERP</div>
-          <div class="center">COMPROBANTE DE PAGO</div>
-          <div class="line"></div>
-          <div class="flex"><span>FECHA:</span> <span>${new Date(receipt.createdAt).toLocaleString()}</span></div>
-          <div class="flex"><span>RECIBO:</span> <span>#${receipt.id.toString().substr(0,8).toUpperCase()}</span></div>
-          <div class="line"></div>
-          <div class="bold">CLIENTE:</div>
-          <div>${receipt.customerName}</div>
-          <div class="line"></div>
-          <div class="bold">DETALLE DE PAGO:</div>
-          <div class="flex"><span>EFECTIVO:</span> <span>$${receipt.cashAmount.toLocaleString()}</span></div>
-          <div class="flex"><span>TRANSF:</span> <span>$${receipt.transferAmount.toLocaleString()}</span></div>
-          <div class="line"></div>
-          <div class="flex bold" style="font-size: 14px;"><span>TOTAL COBRADO:</span> <span>$${receipt.amount.toLocaleString()}</span></div>
-          <div class="line"></div>
-          <div class="bold">COMANDAS AFECTADAS:</div>
-          ${receipt.orderIds.map(id => {
-            const order = orders.find(o => o.id === id);
-            return `
-              <div class="flex">
-                <span>#ORD-${id.substr(0,6).toUpperCase()}</span>
-                <span>$${order?.totalAmount.toLocaleString() || '0'}</span>
-              </div>
-            `;
-          }).join('')}
-          <div class="line"></div>
-          <div class="center" style="margin-top: 20px;">GRACIAS POR SU PAGO<br></div>
-          <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 500); };</script>
-        </body>
-      </html>
+      <style>
+        #print-container .thermal-ticket-wrapper { 
+          font-family: 'Courier New', Courier, monospace; 
+          width: 80mm; 
+          padding: 5mm; 
+          font-size: 12px;
+          line-height: 1.2;
+          color: #000;
+          background: white;
+          margin: 0;
+        }
+        #print-container .center { text-align: center; }
+        #print-container .bold { font-weight: bold; }
+        #print-container .line { border-bottom: 1px dashed #000; margin: 5px 0; }
+        #print-container .flex { display: flex; justify-content: space-between; }
+        #print-container .title { font-size: 16px; margin-bottom: 5px; }
+      </style>
+      <div class="center bold title">CHAZARRETA ERP</div>
+      <div class="center">COMPROBANTE DE PAGO</div>
+      <div class="line"></div>
+      <div class="flex"><span>FECHA:</span> <span>${rDateStr}</span></div>
+      <div class="flex"><span>RECIBO:</span> <span>#${receipt.id.toString().substr(0,8).toUpperCase()}</span></div>
+      <div class="flex"><span>COBRADO POR:</span> <span>${receipt.collectedBy}</span></div>
+      <div class="line"></div>
+      <div class="bold">CLIENTE:</div>
+      <div>${receipt.customerName}</div>
+      <div class="line"></div>
+      <div class="bold">DETALLE DE PAGO:</div>
+      <div class="flex"><span>EFECTIVO:</span> <span>$${receipt.cashAmount.toLocaleString()}</span></div>
+      <div class="flex"><span>TRANSF:</span> <span>$${receipt.transferAmount.toLocaleString()}</span></div>
+      <div class="line"></div>
+      <div class="flex bold" style="font-size: 14px;"><span>TOTAL COBRADO:</span> <span>$${receipt.amount.toLocaleString()}</span></div>
+      <div class="line"></div>
+      <div class="bold">COMANDAS AFECTADAS:</div>
+      ${receipt.orderIds.map(id => {
+        const order = orders.find(o => o.id === id);
+        return `
+          <div class="flex">
+            <span>#ORD-${id.substr(0,6).toUpperCase()}</span>
+            <span>$${order?.totalAmount.toLocaleString() || '0'}</span>
+          </div>
+        `;
+      }).join('')}
+      <div class="line"></div>
+      <div class="center" style="margin-top: 20px;">GRACIAS POR SU PAGO<br></div>
     `;
-    win.document.write(html);
-    win.document.close();
+
+    printHTML(html);
   };
 
   const [connectionStats, setConnectionStats] = useState({
@@ -128,7 +171,7 @@ const AdminDashboard: React.FC<Props> = ({ logs, onRefresh, dbReady, orders }) =
   };
 
   const seedDatabase = async () => {
-    if (!confirm("¿Deseas cargar los datos maestros? Esto reemplazará productos y clientes actuales.")) return;
+    if (!confirm("¿Deseas cargar los datos maestros? Esto reemplazará productos y clientes actuales con la lista de precios actualizada.")) return;
     
     setIsSeeding(true);
     try {
@@ -136,29 +179,32 @@ const AdminDashboard: React.FC<Props> = ({ logs, onRefresh, dbReady, orders }) =
       await supabase.from('orders').delete().neq('total_amount', -1);
       await supabase.from('gate_entries').delete().neq('quantity', -1);
       await supabase.from('account_movements').delete().neq('amount', -1);
+      await supabase.from('payment_receipts').delete().neq('amount', -1);
+      await supabase.from('cash_sessions').delete().neq('initial_cash', -1);
       await supabase.from('product_prices').delete().neq('price', -1);
       await supabase.from('customers').delete().neq('name', 'none');
       await supabase.from('products').delete().neq('name', 'none');
       await supabase.from('price_lists').delete().neq('name', 'none');
 
-      await supabase.from('price_lists').insert(
-        MOCK_PRICE_LISTS.map(l => ({ id: l.id, name: l.name, description: l.description }))
-      );
+      const priceLists = MOCK_PRICE_LISTS;
+      await supabase.from('price_lists').insert(priceLists);
+
+      const productsData = MOCK_PRODUCTS;
 
       await supabase.from('products').insert(
-        MOCK_PRODUCTS.map(p => ({ 
+        productsData.map(p => ({ 
           id: p.id, 
           name: p.name, 
           brand: p.brand, 
-          category: p.category, 
+          category: p.category || 'Panificados', 
           bonus_enabled: p.bonusEnabled,
-          bonus_threshold: 20,
-          bonus_percentage: 10
+          bonus_threshold: 10,
+          bonus_percentage: p.bonusPercentage || 0
         }))
       );
 
       const pricesToInsert: any[] = [];
-      MOCK_PRODUCTS.forEach(p => {
+      productsData.forEach(p => {
         Object.entries(p.prices).forEach(([listId, price]) => {
           pricesToInsert.push({
             product_id: p.id,
@@ -167,53 +213,90 @@ const AdminDashboard: React.FC<Props> = ({ logs, onRefresh, dbReady, orders }) =
           });
         });
       });
-      await supabase.from('product_prices').insert(pricesToInsert);
+      
+      if (pricesToInsert.length > 0) {
+        await supabase.from('product_prices').insert(pricesToInsert);
+      }
 
-      await supabase.from('customers').insert(
-        MOCK_CUSTOMERS.map(c => ({
-          id: c.id,
-          name: c.name,
-          price_list_id: c.priceListId,
-          balance: c.balance,
-          is_blocked: c.isBlocked
-        }))
-      );
+      await supabase.from('customers').insert(MOCK_CUSTOMERS);
 
-      alert("¡Inicialización completada con éxito!");
+      alert("¡Datos Maestros actualizados con éxito!");
       onRefresh();
     } catch (error: any) {
       console.error(error);
       alert(`Error en el proceso: ${error.message}`);
-    } finally {
-      setIsSeeding(false);
     }
   };
 
-  const fullSqlScript = `-- ERP CHAZARRETA v1.0 - Esquema Completo + Datos Maestros
+  const generateSqlScript = () => {
+    const priceListsSql = MOCK_PRICE_LISTS.map(l => 
+      `('${l.id}', '${l.name}')`
+    ).join(',\n');
+
+    const productsSql = MOCK_PRODUCTS.map(p => 
+      `('${p.id}', '${p.name.replace(/'/g, "''")}', '${p.brand}', '${p.category}', ${p.bonusEnabled}, ${p.bonusPercentage})`
+    ).join(',\n');
+
+    const pricesToInsert: string[] = [];
+    MOCK_PRODUCTS.forEach(p => {
+      Object.entries(p.prices).forEach(([listId, price]) => {
+        pricesToInsert.push(`('${p.id}', '${listId}', ${price})`);
+      });
+    });
+    const pricesSql = pricesToInsert.join(',\n');
+
+    const customersSql = MOCK_CUSTOMERS.map(c => 
+      `('${c.id}', '${c.name.replace(/'/g, "''")}', '${c.priceListId}', ${c.balance})`
+    ).join(',\n');
+
+    return `-- ERP CHAZARRETA v1.3 - Esquema y Datos Dinámicos
+DROP TABLE IF EXISTS credit_note_items CASCADE;
+DROP TABLE IF EXISTS credit_notes CASCADE;
+DROP TABLE IF EXISTS payment_receipts CASCADE;
+DROP TABLE IF EXISTS cash_sessions CASCADE;
 DROP TABLE IF EXISTS order_items CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
 DROP TABLE IF EXISTS product_prices CASCADE;
 DROP TABLE IF EXISTS customers CASCADE;
 DROP TABLE IF EXISTS products CASCADE;
+DROP TABLE IF EXISTS price_history CASCADE;
+DROP TABLE IF EXISTS price_update_jobs CASCADE;
+DROP TABLE IF EXISTS archived_price_lists CASCADE;
 DROP TABLE IF EXISTS price_lists CASCADE;
-DROP TABLE IF EXISTS account_movements CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS audit_logs CASCADE;
 DROP TABLE IF EXISTS gate_entries CASCADE;
-DROP TABLE IF EXISTS payment_receipts CASCADE;
 
-CREATE TABLE price_lists (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
-CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT NOT NULL, brand TEXT, category TEXT, bonus_enabled BOOLEAN DEFAULT TRUE, bonus_threshold INTEGER DEFAULT 20, bonus_percentage INTEGER DEFAULT 10, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE users (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL, is_approved BOOLEAN DEFAULT FALSE, password_hash TEXT, customer_id TEXT, address TEXT, phone TEXT, cuit TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE price_lists (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT NOT NULL, brand TEXT, category TEXT, barcode TEXT, bonus_enabled BOOLEAN DEFAULT TRUE, bonus_threshold INTEGER DEFAULT 10, bonus_percentage INTEGER DEFAULT 10, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
 CREATE TABLE product_prices (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), product_id TEXT REFERENCES products(id) ON DELETE CASCADE, price_list_id TEXT REFERENCES price_lists(id) ON DELETE CASCADE, price DECIMAL(12,2) NOT NULL, UNIQUE(product_id, price_list_id));
-CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, price_list_id TEXT REFERENCES price_lists(id), balance DECIMAL(12,2) DEFAULT 0, is_blocked BOOLEAN DEFAULT FALSE, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
-CREATE TABLE orders (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL, customer_name TEXT, status TEXT DEFAULT 'PENDING', total_amount DECIMAL(12,2) DEFAULT 0, paid_amount DECIMAL(12,2) DEFAULT 0, signature_url TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE price_history (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), price_list_id TEXT REFERENCES price_lists(id) ON DELETE CASCADE, product_id TEXT REFERENCES products(id) ON DELETE CASCADE, price DECIMAL(12,2) NOT NULL, effective_date TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE price_update_jobs (id TEXT PRIMARY KEY, price_list_id TEXT REFERENCES price_lists(id) ON DELETE CASCADE, category TEXT, brand TEXT, operation TEXT NOT NULL, value DECIMAL(12,2) NOT NULL, status TEXT DEFAULT 'PENDING', scheduled_for TIMESTAMP WITH TIME ZONE NOT NULL, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE archived_price_lists (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), original_list_id TEXT REFERENCES price_lists(id) ON DELETE SET NULL, name TEXT NOT NULL, valid_from TIMESTAMP WITH TIME ZONE NOT NULL, prices_snapshot JSONB NOT NULL, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, price_list_id TEXT REFERENCES price_lists(id), balance DECIMAL(12,2) DEFAULT 0, is_blocked BOOLEAN DEFAULT FALSE, credit_limit DECIMAL(12,2) DEFAULT NULL, address TEXT, phone TEXT, cuit TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE orders (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL, customer_name TEXT, status TEXT DEFAULT 'PENDING', total_amount DECIMAL(12,2) DEFAULT 0, paid_amount DECIMAL(12,2) DEFAULT 0, signature_url TEXT, delivery_date TIMESTAMP WITH TIME ZONE, is_correction BOOLEAN DEFAULT FALSE, replaced_order_id UUID, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
 CREATE TABLE order_items (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), order_id UUID REFERENCES orders(id) ON DELETE CASCADE, product_id TEXT REFERENCES products(id), quantity INTEGER NOT NULL, bonus_quantity INTEGER DEFAULT 0, unit_price DECIMAL(12,2) NOT NULL);
-CREATE TABLE gate_entries (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), customer_id TEXT REFERENCES customers(id), product_name TEXT, quantity INTEGER, reason TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
-CREATE TABLE account_movements (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), customer_id TEXT REFERENCES customers(id), type TEXT, amount DECIMAL(12,2), description TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
-CREATE TABLE payment_receipts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), customer_id TEXT REFERENCES customers(id), customer_name TEXT, amount DECIMAL(12,2), cash_amount DECIMAL(12,2), transfer_amount DECIMAL(12,2), payment_mode TEXT, order_ids TEXT[], details JSONB, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE credit_notes (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), order_id UUID REFERENCES orders(id) ON DELETE CASCADE, customer_id TEXT REFERENCES customers(id) ON DELETE CASCADE, customer_name TEXT, total_amount DECIMAL(12,2) NOT NULL, reason TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE credit_note_items (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), credit_note_id UUID REFERENCES credit_notes(id) ON DELETE CASCADE, product_id TEXT REFERENCES products(id), quantity INTEGER NOT NULL, unit_price DECIMAL(12,2) NOT NULL, total DECIMAL(12,2) NOT NULL);
+CREATE TABLE payment_receipts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), customer_id TEXT REFERENCES customers(id) ON DELETE CASCADE, customer_name TEXT, amount DECIMAL(12,2) NOT NULL, cash_amount DECIMAL(12,2) DEFAULT 0, transfer_amount DECIMAL(12,2) DEFAULT 0, iva_boletas_amount DECIMAL(12,2) DEFAULT 0, payment_mode TEXT, order_ids JSONB, collected_by TEXT, details JSONB, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE cash_sessions (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), opened_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), closed_at TIMESTAMP WITH TIME ZONE, opened_by TEXT NOT NULL, closed_by TEXT, initial_cash DECIMAL(12,2) DEFAULT 0, final_cash_reported DECIMAL(12,2), expected_cash DECIMAL(12,2), total_cash_payments DECIMAL(12,2) DEFAULT 0, total_transfer_payments DECIMAL(12,2) DEFAULT 0, total_iva_boletas_payments DECIMAL(12,2) DEFAULT 0, notes TEXT);
+CREATE TABLE gate_entries (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), customer_id TEXT REFERENCES customers(id), customer_name TEXT, status TEXT DEFAULT 'PENDING', items JSONB, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());
+CREATE TABLE audit_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(), user_id TEXT, action TEXT, target_id TEXT, old_value TEXT, new_value TEXT);
 
-INSERT INTO price_lists (id, name, description) VALUES ('l1', 'Distribuidores', 'Precio para canales de distribución externos'), ('l2', 'Supermercados', 'Grandes superficies y cadenas'), ('l3', 'Sucursales', 'Venta directa en locales propios');
-INSERT INTO products (id, name, brand, category, bonus_enabled) VALUES ('p1', 'Pan de Molde Blanco', 'La Fornarina', 'Panificados', true), ('p2', 'Pan de Molde Salvado', 'La Fornarina', 'Panificados', true), ('p3', 'Grisines Tradicionales', 'Villecco', 'Snacks', false), ('p4', 'Pepas de Membrillo', 'Villecco', 'Dulces', true);
-INSERT INTO product_prices (product_id, price_list_id, price) VALUES ('p1', 'l1', 1080), ('p1', 'l2', 1150), ('p1', 'l3', 1200), ('p2', 'l1', 1215), ('p2', 'l2', 1280), ('p2', 'l3', 1350), ('p3', 'l1', 765), ('p3', 'l2', 810), ('p3', 'l3', 850), ('p4', 'l1', 990), ('p4', 'l2', 1050), ('p4', 'l3', 1100);
-INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1', 'Distribuidora Norte', 'l1', 45000, false), ('c2', 'Sucursal Centro', 'l3', 0, false), ('c3', 'Coto / Carrefour', 'l2', 120000, false);`;
+INSERT INTO price_lists (id, name) VALUES 
+${priceListsSql};
+
+INSERT INTO products (id, name, brand, category, bonus_enabled, bonus_percentage) VALUES 
+${productsSql};
+
+INSERT INTO product_prices (product_id, price_list_id, price) VALUES 
+${pricesSql};
+
+INSERT INTO customers (id, name, price_list_id, balance) VALUES 
+${customersSql};
+`;
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -223,6 +306,12 @@ INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1
           <p className="text-slate-500 font-medium">Configuración de infraestructura y datos cloud.</p>
         </div>
         <div className="flex bg-white p-1.5 rounded-[1.5rem] border border-slate-200 shadow-sm">
+          <button 
+            onClick={() => setActiveTab('USERS')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'USERS' ? 'bg-slate-900 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}
+          >
+            <ShieldCheck size={16} /> Usuarios
+          </button>
           <button 
             onClick={() => setActiveTab('RECEIPTS')}
             className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'RECEIPTS' ? 'bg-slate-900 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}
@@ -322,13 +411,20 @@ INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1
                   <button onClick={handleRefreshConnection} disabled={isChecking} className="bg-white/5 hover:bg-white/10 px-6 py-2.5 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-white border border-white/10">
                     <RefreshCw className={isChecking ? 'animate-spin' : ''} size={16} /> Sincronizar UI
                   </button>
-                  <button onClick={() => copyToClipboard(fullSqlScript)} className="bg-blue-600 hover:bg-blue-500 px-6 py-2.5 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-white shadow-xl shadow-blue-500/20">
+                  <button 
+                    onClick={seedDatabase} 
+                    disabled={isSeeding} 
+                    className="bg-emerald-600 hover:bg-emerald-500 px-6 py-2.5 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-white shadow-xl shadow-emerald-500/20"
+                  >
+                    {isSeeding ? <RefreshCw className="animate-spin" size={16} /> : <Play size={16} />} Cargar Datos Maestros
+                  </button>
+                  <button onClick={() => copyToClipboard(generateSqlScript())} className="bg-blue-600 hover:bg-blue-500 px-6 py-2.5 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-white shadow-xl shadow-blue-500/20">
                     <Copy size={16} /> Copiar SQL
                   </button>
                 </div>
               </div>
               <pre className="bg-black/40 p-6 rounded-2xl font-mono text-[10px] overflow-x-auto border border-white/5 leading-relaxed text-blue-300 custom-scrollbar max-h-[350px]">
-                {fullSqlScript}
+                {generateSqlScript()}
               </pre>
             </div>
           </div>
@@ -357,6 +453,45 @@ INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1
             </div>
           </div>
         </div>
+      ) : activeTab === 'USERS' ? (
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden animate-in slide-in-from-bottom-4">
+          <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+            <h2 className="font-black text-slate-800 uppercase tracking-tight text-lg flex items-center gap-2">
+              <ShieldCheck className="text-blue-500" size={20} /> Gestión de Usuarios
+            </h2>
+            <button onClick={fetchUsers} className="p-2 hover:bg-slate-200 rounded-lg transition-all"><RefreshCw size={16} className={loadingUsers ? 'animate-spin' : ''} /></button>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {users.length === 0 ? (
+              <div className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">
+                No hay usuarios registrados
+              </div>
+            ) : users.map(user => (
+              <div key={user.id} className="px-8 py-6 flex flex-col md:flex-row md:items-center justify-between hover:bg-slate-50/50 transition-all gap-4">
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 ${user.is_approved ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'} rounded-2xl flex items-center justify-center`}>
+                    <ShieldCheck size={24} />
+                  </div>
+                  <div>
+                    <p className="font-black text-slate-800 uppercase text-sm">{user.name}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">{user.email} • Rol: {user.role}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${user.is_approved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {user.is_approved ? 'Aprobado' : 'Pendiente'}
+                  </span>
+                  <button 
+                    onClick={() => approveUser(user.id, user.is_approved)}
+                    className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${user.is_approved ? 'bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white' : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-200'}`}
+                  >
+                    {user.is_approved ? 'Revocar Acceso' : 'Aprobar Usuario'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       ) : activeTab === 'RECEIPTS' ? (
         <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden animate-in slide-in-from-bottom-4">
           <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
@@ -379,7 +514,12 @@ INSERT INTO customers (id, name, price_list_id, balance, is_blocked) VALUES ('c1
                   <div>
                     <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Recibo #{receipt.id.toString().substr(0,8).toUpperCase()}</p>
                     <p className="font-black text-slate-800 uppercase text-sm">{receipt.customerName}</p>
-                    <p className="text-[10px] text-slate-300 font-bold uppercase">{new Date(receipt.createdAt).toLocaleString()}</p>
+                    <p className="text-[10px] text-slate-300 font-bold uppercase">
+                      {(() => {
+                        const d = new Date(receipt.createdAt);
+                        return isNaN(d.getTime()) ? 'Fecha N/A' : d.toLocaleString();
+                      })()} • Cobrado por: {receipt.collectedBy}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-8">

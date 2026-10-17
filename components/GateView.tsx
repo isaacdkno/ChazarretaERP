@@ -15,14 +15,15 @@ import { GateEntry, GateEntryItem, Customer, Product } from '../types';
 
 interface Props {
   gateEntries: GateEntry[];
-  setGateEntries: React.Dispatch<React.SetStateAction<GateEntry[]>>;
+  addGateEntry: (entry: GateEntry) => Promise<void>;
   customers: Customer[];
   products: Product[];
 }
 
-const GateView: React.FC<Props> = ({ gateEntries, setGateEntries, customers, products }) => {
+const GateView: React.FC<Props> = ({ gateEntries, addGateEntry, customers, products }) => {
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [currentItems, setCurrentItems] = useState<GateEntryItem[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
   
   const [itemForm, setItemForm] = useState({
     productId: '',
@@ -50,26 +51,39 @@ const GateView: React.FC<Props> = ({ gateEntries, setGateEntries, customers, pro
     setCurrentItems(currentItems.filter(item => item.id !== id));
   };
 
-  const handleFinalSubmit = (e: React.FormEvent) => {
+  const handleFinalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (currentItems.length === 0) return;
+    if (currentItems.length === 0 || isSaving) return;
 
     const customer = customers.find(c => c.id === selectedCustomerId);
     if (!customer) return;
 
-    const newEntry: GateEntry = {
-      id: Math.random().toString(36).substr(2, 9),
-      customerId: customer.id,
-      customerName: customer.name,
-      items: currentItems,
-      status: 'PENDING',
-      createdAt: new Date().toISOString()
-    };
+    setIsSaving(true);
+    try {
+      const newEntry: GateEntry = {
+        id: Math.random().toString(36).substr(2, 9),
+        customerId: customer.id,
+        customerName: customer.name,
+        items: currentItems,
+        status: 'PENDING',
+        createdAt: new Date().toISOString()
+      };
 
-    setGateEntries(prev => [newEntry, ...prev]);
-    setCurrentItems([]);
-    setSelectedCustomerId('');
+      await addGateEntry(newEntry);
+      setCurrentItems([]);
+      setSelectedCustomerId('');
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  const today = new Date().toLocaleDateString();
+  const filteredGateEntries = gateEntries.filter(entry => {
+    const entryDate = new Date(entry.createdAt).toLocaleDateString();
+    return entryDate === today;
+  });
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -127,6 +141,7 @@ const GateView: React.FC<Props> = ({ gateEntries, setGateEntries, customers, pro
                     placeholder="Cantidad"
                     value={itemForm.quantity}
                     onChange={e => setItemForm({...itemForm, quantity: parseInt(e.target.value) || 0})}
+                    onWheel={(e) => e.currentTarget.blur()}
                     className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 outline-none"
                   />
                   <select 
@@ -138,6 +153,8 @@ const GateView: React.FC<Props> = ({ gateEntries, setGateEntries, customers, pro
                     <option value="Rotura">Rotura</option>
                     <option value="Error de Pedido">Error</option>
                     <option value="Canje">Canje</option>
+                    <option value="Mala Producción">Mala Producción</option>
+                    <option value="Hongos antes de Fecha">Hongos antes de Fecha</option>
                   </select>
                 </div>
 
@@ -170,9 +187,15 @@ const GateView: React.FC<Props> = ({ gateEntries, setGateEntries, customers, pro
                   
                   <button 
                     onClick={handleFinalSubmit}
-                    className="w-full py-5 bg-emerald-600 text-white font-black uppercase tracking-[0.2em] text-xs rounded-2xl shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all flex items-center justify-center gap-3 mt-4"
+                    disabled={isSaving}
+                    className="w-full py-5 bg-emerald-600 text-white font-black uppercase tracking-[0.2em] text-xs rounded-2xl shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all flex items-center justify-center gap-3 mt-4 disabled:opacity-50"
                   >
-                    <ClipboardCheck size={20} /> Registrar Entrada Completa
+                    {isSaving ? (
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <ClipboardCheck size={20} />
+                    )}
+                    {isSaving ? 'Registrando...' : 'Registrar Entrada Completa'}
                   </button>
                 </div>
               )}
@@ -189,7 +212,7 @@ const GateView: React.FC<Props> = ({ gateEntries, setGateEntries, customers, pro
             </div>
             
             <div className="divide-y divide-slate-100">
-              {gateEntries.length === 0 ? (
+              {filteredGateEntries.length === 0 ? (
                 <div className="p-24 text-center">
                   <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-slate-200">
                     <Package size={40} />
@@ -197,7 +220,7 @@ const GateView: React.FC<Props> = ({ gateEntries, setGateEntries, customers, pro
                   <p className="text-slate-400 font-black uppercase tracking-widest text-xs">No hay ingresos registrados hoy.</p>
                 </div>
               ) : (
-                gateEntries.map(entry => (
+                filteredGateEntries.map(entry => (
                   <div key={entry.id} className="p-8 hover:bg-slate-50 transition-all group">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                       <div className="flex items-start gap-4">
@@ -208,7 +231,10 @@ const GateView: React.FC<Props> = ({ gateEntries, setGateEntries, customers, pro
                           <p className="text-xl font-black text-slate-800 uppercase tracking-tight leading-none mb-2">{entry.customerName}</p>
                           <div className="flex items-center gap-3">
                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white px-3 py-1 rounded-full border border-slate-100">
-                               {new Date(entry.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                               {(() => {
+                                 const d = new Date(entry.createdAt);
+                                 return isNaN(d.getTime()) ? 'Fecha N/A' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                               })()}
                              </span>
                           </div>
                         </div>

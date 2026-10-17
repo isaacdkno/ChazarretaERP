@@ -26,6 +26,16 @@ DROP TABLE IF EXISTS gate_entries CASCADE;
 -- 2. DEFINICIÓN DE TABLAS
 -- ==========================================
 
+-- ==========================================
+-- MIGRACIÓN NO DESTRUCTIVA (Ejecutar solo esto si ya tenés datos en producción):
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS customer_id TEXT;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS cuit TEXT;
+-- ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode TEXT;
+-- ==========================================
+
 -- Usuarios del sistema
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -33,6 +43,11 @@ CREATE TABLE users (
     name TEXT NOT NULL,
     role TEXT NOT NULL,
     is_approved BOOLEAN DEFAULT FALSE,
+    password_hash TEXT,
+    customer_id TEXT,
+    address TEXT,
+    phone TEXT,
+    cuit TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -51,6 +66,7 @@ CREATE TABLE products (
     name TEXT NOT NULL,
     brand TEXT,
     category TEXT,
+    barcode TEXT,
     bonus_enabled BOOLEAN DEFAULT TRUE,
     bonus_threshold INTEGER DEFAULT 20,
     bonus_percentage INTEGER DEFAULT 10,

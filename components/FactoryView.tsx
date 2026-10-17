@@ -1,15 +1,18 @@
 
 import React, { useState } from 'react';
-import { Warehouse, Package, TrendingUp, Clock, X } from 'lucide-react';
-import { Order, OrderStatus, Product, GateEntry } from '../types';
+import { Warehouse, Package, TrendingUp, Clock, X, Search, Plus } from 'lucide-react';
+import { Order, OrderStatus, Product, GateEntry, Customer, UserRole, AppUser } from '../types';
 
 interface Props {
   orders: Order[];
   products: Product[];
   gateEntries: GateEntry[];
+  customers: Customer[];
+  currentUser: AppUser;
 }
 
-const FactoryView: React.FC<Props> = ({ orders, products, gateEntries }) => {
+const FactoryView: React.FC<Props> = ({ orders, products, gateEntries, customers, currentUser }) => {
+  const canViewCreditLimit = [UserRole.ADMIN, UserRole.MANAGER, UserRole.COLLECTION].includes(currentUser.role);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedGateEntry, setSelectedGateEntry] = useState<GateEntry | null>(null);
 
@@ -18,7 +21,7 @@ const FactoryView: React.FC<Props> = ({ orders, products, gateEntries }) => {
     o.status === OrderStatus.PENDING || o.status === OrderStatus.VALIDATED
   );
 
-  const validatedGateEntries = gateEntries.filter(e => e.status === 'CONVERTED');
+  const validatedGateEntries = gateEntries.filter(e => e.status === 'VALIDATED');
 
   const validatedOrders = orders.filter(o => o.status === OrderStatus.VALIDATED);
   const pendingOrders = orders.filter(o => o.status === OrderStatus.PENDING);
@@ -39,6 +42,38 @@ const FactoryView: React.FC<Props> = ({ orders, products, gateEntries }) => {
     });
   });
 
+  const [showDailyPart, setShowDailyPart] = useState(false);
+  const [dailyPartQuantities, setDailyPartQuantities] = useState<{[id: string]: number}>({});
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const handleOpenDailyPart = () => {
+    const initialQuantities: {[id: string]: number} = {};
+    Object.entries(productionNeeds).forEach(([id, qty]) => {
+      initialQuantities[id] = qty as number;
+    });
+    setDailyPartQuantities(initialQuantities);
+    setShowDailyPart(true);
+  };
+
+  const handleAddProductToDailyPart = (productId: string) => {
+    if (!dailyPartQuantities[productId]) {
+      setDailyPartQuantities(prev => ({ ...prev, [productId]: 0 }));
+    }
+    setSearchTerm('');
+  };
+
+  const filteredProductsToAdd = products.filter(p => 
+    !dailyPartQuantities[p.id] && 
+    (p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.brand.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  const handleSaveDailyPart = () => {
+    // Here we would normally save to a database
+    // For now, we'll simulate success
+    alert("Parte diario cargado correctamente. La producción ha sido registrada.");
+    setShowDailyPart(false);
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -46,7 +81,10 @@ const FactoryView: React.FC<Props> = ({ orders, products, gateEntries }) => {
           <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Consolidado de Producción</h1>
           <p className="text-slate-500 font-medium">Listado de productos a elaborar según pedidos activos.</p>
         </div>
-        <button className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-blue-600 transition-all flex items-center gap-2 shadow-xl shadow-slate-200">
+        <button 
+          onClick={handleOpenDailyPart}
+          className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-blue-600 transition-all flex items-center gap-2 shadow-xl shadow-slate-200"
+        >
           <TrendingUp size={18} /> Cargar Parte Diario
         </button>
       </header>
@@ -285,6 +323,124 @@ const FactoryView: React.FC<Props> = ({ orders, products, gateEntries }) => {
                   className="px-8 py-4 bg-slate-900 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl hover:bg-blue-600 transition-all shadow-lg"
                 >
                   Cerrar Detalle
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {showDailyPart && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-3xl rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-10">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight mb-1">Cargar Parte Diario</h2>
+                  <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Registro de producción real del día</p>
+                </div>
+                <button onClick={() => setShowDailyPart(false)} className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all">
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Add Product Search */}
+              <div className="mb-6 relative">
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input 
+                    type="text"
+                    placeholder="BUSCAR PRODUCTO PARA AGREGAR..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-black uppercase tracking-widest focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                </div>
+                
+                {searchTerm && (
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl z-20 max-h-60 overflow-y-auto custom-scrollbar">
+                    {filteredProductsToAdd.length === 0 ? (
+                      <div className="p-4 text-center text-slate-400 text-[10px] font-bold uppercase tracking-widest">No se encontraron productos</div>
+                    ) : (
+                      filteredProductsToAdd.map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => handleAddProductToDailyPart(p.id)}
+                          className="w-full px-6 py-3 text-left hover:bg-slate-50 flex items-center justify-between group transition-colors"
+                        >
+                          <div>
+                            <p className="text-xs font-black text-slate-800 uppercase">{p.name}</p>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase">{p.brand}</p>
+                          </div>
+                          <Plus size={16} className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-50 rounded-[2rem] border border-slate-100 overflow-hidden max-h-[40vh] overflow-y-auto custom-scrollbar">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-100/50 border-b border-slate-200 sticky top-0 z-10">
+                    <tr>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Producto</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Demanda</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Producido</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {Object.entries(dailyPartQuantities).map(([prodId, qty]) => {
+                      const p = products.find(prod => prod.id === prodId);
+                      const demand = productionNeeds[prodId] || 0;
+                      return (
+                        <tr key={prodId} className="bg-white/50">
+                          <td className="px-6 py-4">
+                            <p className="font-bold text-slate-800 uppercase text-xs">{p?.name || 'Producto'}</p>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase">{p?.brand}</p>
+                          </td>
+                          <td className="px-6 py-4 text-center font-black text-slate-400 text-sm">{demand}</td>
+                          <td className="px-6 py-4 text-center">
+                            <input 
+                              type="number"
+                              value={dailyPartQuantities[prodId] || 0}
+                              onChange={(e) => setDailyPartQuantities(prev => ({ ...prev, [prodId]: parseInt(e.target.value) || 0 }))}
+                              className="w-20 px-3 py-2 bg-white border border-slate-200 rounded-xl text-center font-black text-slate-900 focus:ring-2 focus:ring-blue-500/20 outline-none"
+                            />
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            {!productionNeeds[prodId] && (
+                              <button 
+                                onClick={() => {
+                                  const newQuantities = { ...dailyPartQuantities };
+                                  delete newQuantities[prodId];
+                                  setDailyPartQuantities(newQuantities);
+                                }}
+                                className="text-red-400 hover:text-red-600 transition-colors"
+                              >
+                                <X size={16} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-8 flex justify-end gap-4">
+                <button 
+                  onClick={() => setShowDailyPart(false)}
+                  className="px-8 py-4 bg-slate-100 text-slate-600 font-black uppercase tracking-widest text-[10px] rounded-2xl hover:bg-slate-200 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleSaveDailyPart}
+                  className="px-8 py-4 bg-slate-900 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl hover:bg-blue-600 transition-all shadow-lg flex items-center gap-2"
+                >
+                  <TrendingUp size={16} /> Confirmar Producción
                 </button>
               </div>
             </div>

@@ -23,13 +23,21 @@ import {
   Database,
   Package,
   BarChart3,
-  Loader2
+  Loader2,
+  Menu,
+  X,
+  Radio
 } from 'lucide-react';
 
-import { UserRole, Order, Customer, OrderStatus, GateEntry, AuditLog, Product, PriceList, OrderStatusLabels, CreditNote, CreditNoteItem, AppUser } from './types';
+import { UserRole, Order, Customer, OrderStatus, GateEntry, AuditLog, Product, PriceList, OrderStatusLabels, CreditNote, CreditNoteItem, AppUser, CurrentUser } from './types';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { getOrders, getCreditNotes, getGateEntries } from './services/supabaseService';
+import { hashPassword, verifyPassword } from './utils/auth';
+import { installGlobalAlertBridge, toast, playNotificationSound } from './utils/toast';
+import ToastContainer from './components/ToastContainer';
 import ErrorBoundary from './components/ErrorBoundary';
+
+installGlobalAlertBridge();
 
 const DistributorView = lazy(() => import('./components/DistributorView'));
 const UserManagement = lazy(() => import('./components/UserManagement'));
@@ -43,12 +51,34 @@ const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const ProductManagement = lazy(() => import('./components/ProductManagement'));
 const ReportsView = lazy(() => import('./components/ReportsView'));
 
+export const computeCustomerLedgerBalance = (
+  customerId: string,
+  allOrders: Order[],
+  allCreditNotes: CreditNote[]
+): number => {
+  const pendingOrders = allOrders.filter(
+    o =>
+      o.customerId === customerId &&
+      (o.status === OrderStatus.DISPATCHED || o.status === OrderStatus.PAID_PARTIAL)
+  );
+  const pendingOrderIds = pendingOrders.map(o => o.id);
+  const applicableCNs = allCreditNotes.filter(
+    cn => cn.customerId === customerId && pendingOrderIds.includes(cn.orderId)
+  );
+  const rawBalance =
+    pendingOrders.reduce((sum, o) => sum + (Number(o.totalAmount || 0) - Number(o.paidAmount || 0)), 0) -
+    applicableCNs.reduce((sum, cn) => sum + Number(cn.totalAmount || 0), 0);
+  return Math.max(0, Math.round(rawBalance * 100) / 100);
+};
+
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<{name: string, role: UserRole, email?: string} | null>(() => {
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(() => {
     const saved = localStorage.getItem('erp_user');
     return saved ? JSON.parse(saved) : null;
   });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isRealtimeLive, setIsRealtimeLive] = useState(false);
 
   useEffect(() => {
     if (currentUser) {
@@ -79,10 +109,14 @@ const App: React.FC = () => {
 
     setLoading(true);
     try {
-      // 1. Verificar si la tabla existe (Test de conexión)
-      // Usamos limit(0) para que sea una consulta súper liviana solo para verificar existencia
-      const { data: custs, error: custError } = await supabase.from('customers').select('*').limit(100);
-      const { error: userTableError } = await supabase.from('users').select('*').limit(1);
+      // 1. Verificar conexión y traer clientes sin límite artificial de 100
+      const [
+        { data: custs, error: custError },
+        { error: userTableError }
+      ] = await Promise.all([
+        supabase.from('customers').select('*'),
+        supabase.from('users').select('id').limit(1)
+      ]);
       
       if (custError || userTableError) {
         console.warn("DB Error:", custError || userTableError);
@@ -99,8 +133,17 @@ const App: React.FC = () => {
 
       setDbReady(true);
       
-      // 0. Listas de Precios
-      const { data: lists } = await supabase.from('price_lists').select('*');
+      // 2. Cargar tablas maestras en paralelo para máxima velocidad
+      const [
+        { data: lists },
+        { data: prods },
+        { data: prices }
+      ] = await Promise.all([
+        supabase.from('price_lists').select('*'),
+        supabase.from('products').select('*'),
+        supabase.from('product_prices').select('*')
+      ]);
+
       if (lists) {
         setPriceLists(lists.map(l => ({
           id: l.id,
@@ -116,30 +159,27 @@ const App: React.FC = () => {
           name: c.name,
           groupId: '', 
           priceListId: c.price_list_id,
-          balance: c.balance,
-          isBlocked: c.is_blocked,
-          creditLimit: c.credit_limit,
+          balance: Number(c.balance || 0),
+          isBlocked: Boolean(c.is_blocked),
+          creditLimit: c.credit_limit !== null && c.credit_limit !== undefined ? Number(c.credit_limit) : undefined,
           address: c.address,
           phone: c.phone,
           cuit: c.cuit
         })));
       }
 
-      // 2. Productos y sus precios
-      const { data: prods } = await supabase.from('products').select('*');
-      const { data: prices } = await supabase.from('product_prices').select('*');
-      
       if (prods) {
         const formattedProducts = prods.map(p => {
           const productPrices: {[id: string]: number} = {};
           prices?.filter(pr => pr.product_id === p.id).forEach(pr => {
-            productPrices[pr.price_list_id] = pr.price;
+            productPrices[pr.price_list_id] = Number(pr.price || 0);
           });
           return {
             id: p.id,
             name: p.name,
             brand: p.brand as 'La Fornarina' | 'Villecco',
             category: p.category,
+            barcode: p.barcode,
             bonusEnabled: p.bonus_enabled,
             bonusThreshold: p.bonus_threshold,
             bonusPercentage: p.bonus_percentage,
@@ -224,7 +264,53 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchData();
+
+    if (!isSupabaseConfigured()) return;
+
+    const channel = supabase
+      .channel('erp-live-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          playNotificationSound('chime');
+          const newOrd = payload.new as any;
+          toast.info(`Nueva comanda recibida de ${newOrd.customer_name || 'Cliente'}`, 'Tiempo Real');
+        } else if (payload.eventType === 'UPDATE') {
+          const newOrd = payload.new as any;
+          const oldOrd = payload.old as any;
+          if (oldOrd?.status !== newOrd?.status) {
+            playNotificationSound('chime');
+          }
+        }
+        fetchData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gate_entries' }, () => {
+        fetchData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
+        fetchData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'credit_notes' }, () => {
+        fetchData();
+      })
+      .subscribe((status) => {
+        setIsRealtimeLive(status === 'SUBSCRIBED');
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
+
+  const syncCustomerBalance = async (
+    customerId: string,
+    nextOrders: Order[],
+    nextCreditNotes: CreditNote[]
+  ) => {
+    if (!customerId) return;
+    const exactBalance = computeCustomerLedgerBalance(customerId, nextOrders, nextCreditNotes);
+    await supabase.from('customers').update({ balance: exactBalance }).eq('id', customerId);
+    setCustomers(prev => prev.map(c => c.id === customerId ? { ...c, balance: exactBalance } : c));
+  };
 
   const addOrder = async (order: Order) => {
     if (!isSupabaseConfigured()) {
@@ -241,7 +327,6 @@ const App: React.FC = () => {
         created_at: order.createdAt
       };
 
-      // Only add these if they are present to avoid errors with older schemas
       if (order.deliveryDate !== undefined) orderData.delivery_date = order.deliveryDate;
       if (order.isCorrection !== undefined) orderData.is_correction = order.isCorrection;
       if (order.replacedOrderId !== undefined) orderData.replaced_order_id = order.replacedOrderId;
@@ -252,17 +337,6 @@ const App: React.FC = () => {
         .select().single();
 
       if (orderError) throw orderError;
-
-      // If order is created as DISPATCHED (e.g. correction), increase customer balance
-      if (order.status === OrderStatus.DISPATCHED) {
-        const customer = customers.find(c => c.id === order.customerId);
-        if (customer) {
-          const newBalance = (customer.balance || 0) + order.totalAmount;
-          const { error: balanceError } = await supabase.from('customers').update({ balance: newBalance }).eq('id', customer.id);
-          if (balanceError) throw balanceError;
-          setCustomers(prev => prev.map(c => c.id === customer.id ? { ...c, balance: newBalance } : c));
-        }
-      }
 
       const itemsToInsert = order.items.map(item => ({
         order_id: newOrder.id,
@@ -275,11 +349,20 @@ const App: React.FC = () => {
       const { error: itemsError } = await supabase.from('order_items').insert(itemsToInsert);
       if (itemsError) throw itemsError;
 
-      setOrders(prev => [{ ...order, id: String(newOrder.id) }, ...prev]);
+      const createdOrder: Order = { ...order, id: String(newOrder.id) };
+      const nextOrders = [createdOrder, ...orders];
+      setOrders(nextOrders);
+
+      if (order.status === OrderStatus.DISPATCHED) {
+        await syncCustomerBalance(order.customerId, nextOrders, creditNotes);
+      }
+
+      playNotificationSound('success');
+      toast.success(`Comanda #ORD-${String(newOrder.id).substring(0, 6).toUpperCase()} registrada correctamente.`);
       setIsSynced(true);
     } catch (err) {
       console.error("Error in addOrder:", err);
-      alert("Error al guardar pedido en la nube.");
+      toast.error("Error al guardar pedido en la nube.");
       throw err;
     }
   };
@@ -313,20 +396,15 @@ const App: React.FC = () => {
       const { error: itemsError } = await supabase.from('credit_note_items').insert(itemsToInsert);
       if (itemsError) throw itemsError;
 
-      // Update customer balance (Credit note decreases balance)
-      const customer = customers.find(c => c.id === creditNote.customerId);
-      if (customer) {
-        const newBalance = (customer.balance || 0) - creditNote.totalAmount;
-        const { error: balanceError } = await supabase.from('customers').update({ balance: newBalance }).eq('id', customer.id);
-        if (balanceError) throw balanceError;
-        setCustomers(prev => prev.map(c => c.id === customer.id ? { ...c, balance: newBalance } : c));
-      }
+      const createdCN: CreditNote = { ...creditNote, id: String(newCN.id) };
+      const nextCNs = [createdCN, ...creditNotes];
+      setCreditNotes(nextCNs);
 
-      setCreditNotes(prev => [{ ...creditNote, id: newCN.id }, ...prev]);
+      await syncCustomerBalance(creditNote.customerId, orders, nextCNs);
       setIsSynced(true);
     } catch (err) {
       console.error("Error in addCreditNote:", err);
-      alert("Error al guardar nota de crédito.");
+      toast.error("Error al guardar nota de crédito.");
       throw err;
     }
   };
@@ -335,8 +413,6 @@ const App: React.FC = () => {
     if (!isSupabaseConfigured()) return;
     setIsSynced(false);
     try {
-      const oldOrder = orders.find(o => String(o.id) === String(updatedOrder.id));
-      
       // 1. Try update with all fields
       const { error: firstError } = await supabase.from('orders').update({
         status: updatedOrder.status,
@@ -359,32 +435,16 @@ const App: React.FC = () => {
         if (secondError) throw secondError;
       }
 
-      // Balance Logic (only if update succeeded)
-      if (oldOrder) {
-        const customer = customers.find(c => c.id === updatedOrder.customerId);
-        if (customer) {
-          let balanceDelta = 0;
-          if ((oldOrder.status === OrderStatus.PENDING || oldOrder.status === OrderStatus.CANCELLED) && updatedOrder.status === OrderStatus.DISPATCHED) {
-            balanceDelta = updatedOrder.totalAmount;
-          } else if (oldOrder.status === OrderStatus.DISPATCHED && updatedOrder.status === OrderStatus.CANCELLED) {
-            balanceDelta = -oldOrder.totalAmount;
-          } else if (oldOrder.status === OrderStatus.DISPATCHED && updatedOrder.status === OrderStatus.DISPATCHED && oldOrder.totalAmount !== updatedOrder.totalAmount) {
-            balanceDelta = updatedOrder.totalAmount - oldOrder.totalAmount;
-          }
+      const nextOrders = orders.map(o => String(o.id) === String(updatedOrder.id) ? updatedOrder : o);
+      setOrders(nextOrders);
 
-          if (balanceDelta !== 0) {
-            const newBalance = (customer.balance || 0) + balanceDelta;
-            await supabase.from('customers').update({ balance: newBalance }).eq('id', customer.id);
-            setCustomers(prev => prev.map(c => c.id === customer.id ? { ...c, balance: newBalance } : c));
-          }
-        }
-      }
+      // Sincronizar automáticamente el saldo exacto de la cuenta corriente del cliente
+      await syncCustomerBalance(updatedOrder.customerId, nextOrders, creditNotes);
 
-      setOrders(prev => prev.map(o => String(o.id) === String(updatedOrder.id) ? updatedOrder : o));
       setIsSynced(true);
     } catch (err) {
       console.error("Error in updateOrder:", err);
-      setIsSynced(true); // Reset sync state even on error to allow further actions
+      setIsSynced(true);
       throw err;
     }
   };
@@ -407,10 +467,11 @@ const App: React.FC = () => {
       if (geError) throw geError;
 
       setGateEntries(prev => [{ ...entry, id: String(newGE.id) }, ...prev]);
+      toast.success("Ingreso de mercadería registrado en Portería.");
       setIsSynced(true);
     } catch (err) {
       console.error("Error in addGateEntry:", err);
-      alert("Error al guardar ingreso de portería.");
+      toast.error("Error al guardar ingreso de portería.");
       throw err;
     }
   };
@@ -433,15 +494,14 @@ const App: React.FC = () => {
       setIsSynced(true);
     } catch (err) {
       console.error("Error in updateGateEntry:", err);
-      alert("Error al actualizar ingreso de portería.");
+      toast.error("Error al actualizar ingreso de portería.");
       throw err;
     }
   };
 
   const restoreBackup = async (data: any) => {
-    // Basic validation
     if (!data.orders || !data.products || !data.customers) {
-      alert("El archivo de backup no es válido.");
+      toast.error("El archivo de backup no es válido.");
       return;
     }
 
@@ -455,19 +515,17 @@ const App: React.FC = () => {
       setCustomers(data.customers);
       if (data.gateEntries) setGateEntries(data.gateEntries);
       if (data.priceLists) setPriceLists(data.priceLists);
-      
-      // Note: In a production environment, we would also need to sync this back to Supabase.
-      // For this version, we restore the local state to allow immediate consultation.
-      console.log("Backup restaurado localmente.");
+      toast.success("Backup restaurado localmente.");
     } catch (err) {
       console.error("Error al restaurar backup:", err);
-      alert("Hubo un error al procesar el archivo.");
+      toast.error("Hubo un error al procesar el archivo.");
     }
   };
 
   if (loading && !currentUser) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-10">
+        <ToastContainer />
         <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
         <p className="font-black uppercase tracking-[0.3em] text-sm animate-pulse">Sincronizando con Supabase...</p>
       </div>
@@ -475,41 +533,85 @@ const App: React.FC = () => {
   }
 
   if (!currentUser) {
-    return <Login onLogin={(user) => setCurrentUser(user)} setCustomers={setCustomers} />;
+    return (
+      <>
+        <ToastContainer />
+        <Login onLogin={(user) => setCurrentUser(user)} setCustomers={setCustomers} />
+      </>
+    );
   }
 
   const displayOrders = currentUser.role === UserRole.DISTRIBUTOR 
-    ? orders.filter(o => o.customerName.toLowerCase() === currentUser.name.toLowerCase())
+    ? orders.filter(o => (currentUser.customerId && o.customerId === currentUser.customerId) || o.customerName.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
     : orders;
 
   const displayCustomers = currentUser.role === UserRole.DISTRIBUTOR
-    ? customers.filter(c => c.name.toLowerCase() === currentUser.name.toLowerCase())
+    ? customers.filter(c => (currentUser.customerId && c.id === currentUser.customerId) || c.name.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
     : customers;
+
+  const pendingOrdersBadge = orders.filter(o => o.status === OrderStatus.PENDING).length;
+  const validatedOrdersBadge = orders.filter(o => o.status === OrderStatus.VALIDATED).length;
 
   return (
     <HashRouter>
+      <ToastContainer />
       <div className="min-h-screen flex flex-col md:flex-row bg-[#f8fafc]">
-        <nav className={`${isSidebarCollapsed ? 'md:w-20' : 'md:w-72'} w-full bg-[#0f172a] text-slate-400 flex flex-col shrink-0 border-r border-white/5 transition-all duration-300 relative`}>
+        {/* Barra Superior Móvil */}
+        <div className="md:hidden bg-[#0f172a] text-white px-5 py-4 flex items-center justify-between border-b border-white/10 sticky top-0 z-40">
+          <div className="flex items-center space-x-3">
+            <div className="w-9 h-9 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-lg shadow-blue-600/30">C</div>
+            <div>
+              <span className="font-black text-white tracking-tighter text-base block leading-none">CHAZARRETA</span>
+              <span className="text-[9px] font-bold text-blue-400 tracking-widest uppercase">{currentUser.role}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={fetchData}
+              className="p-2.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white transition-colors"
+              title="Actualizar datos"
+            >
+              <RefreshCw size={18} className={loading ? 'animate-spin text-blue-400' : ''} />
+            </button>
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="p-2.5 rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+              aria-label="Abrir menú"
+            >
+              {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Backdrop Móvil */}
+        {isMobileMenuOpen && (
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 md:hidden"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+        )}
+
+        <nav className={`${isMobileMenuOpen ? 'fixed inset-y-0 left-0 z-50 w-72 flex' : 'hidden md:flex'} ${isSidebarCollapsed ? 'md:w-20' : 'md:w-72'} bg-[#0f172a] text-slate-400 flex-col shrink-0 border-r border-white/5 transition-all duration-300 relative`}>
           <button 
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="absolute -right-3 top-10 bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center shadow-lg z-50 hover:bg-blue-700 transition-all"
+            className="hidden md:flex absolute -right-3 top-10 bg-blue-600 text-white w-6 h-6 rounded-full items-center justify-center shadow-lg z-50 hover:bg-blue-700 transition-all"
           >
             {isSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
           </button>
 
-          <div className={`p-8 mb-4 ${isSidebarCollapsed ? 'px-4' : ''}`}>
+          <div className={`p-8 mb-2 ${isSidebarCollapsed ? 'px-4' : ''}`}>
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-xl shrink-0">C</div>
+              <div className="w-10 h-10 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-xl shrink-0 shadow-lg shadow-blue-600/30">C</div>
               {!isSidebarCollapsed && (
                 <div className="animate-in fade-in duration-300">
                   <span className="font-black text-white tracking-tighter text-xl block leading-none">CHAZARRETA</span>
-                  <span className="text-[10px] font-bold text-blue-500 tracking-widest uppercase">Management System</span>
+                  <span className="text-[10px] font-bold text-blue-400 tracking-widest uppercase">ERP Industrial</span>
                 </div>
               )}
             </div>
           </div>
           
-          <div className="flex-1 px-4 space-y-1 overflow-y-auto overflow-x-hidden">
+          <div className="flex-1 px-4 space-y-1.5 overflow-y-auto overflow-x-hidden custom-scrollbar" onClick={() => setIsMobileMenuOpen(false)}>
             {currentUser.role === UserRole.ADMIN && (
               <>
                 {!isSidebarCollapsed && <p className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] animate-in fade-in">General</p>}
@@ -518,30 +620,32 @@ const App: React.FC = () => {
               </>
             )}
             
-            {!isSidebarCollapsed && <p className="px-4 py-2 mt-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] animate-in fade-in">Tu Módulo</p>}
-            {(currentUser.role === UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/new-order" icon={<LayoutDashboard size={20} />} label="Panel Distribuidor" isCollapsed={isSidebarCollapsed} />}
-            {(currentUser.role === UserRole.GATE || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/gate" icon={<Truck size={20} />} label="Portería" isCollapsed={isSidebarCollapsed} />}
-            {(currentUser.role === UserRole.ORDER_CENTER || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/center" icon={<Settings size={20} />} label="Gestión de Pedidos" isCollapsed={isSidebarCollapsed} />}
+            {!isSidebarCollapsed && <p className="px-4 py-2 mt-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] animate-in fade-in">Módulos Operativos</p>}
+            {(currentUser.role === UserRole.DISTRIBUTOR || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/new-order" icon={<Store size={20} />} label="Portal Distribuidor" isCollapsed={isSidebarCollapsed} />}
+            {(currentUser.role === UserRole.GATE || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/gate" icon={<Truck size={20} />} label="Portería y Cambios" isCollapsed={isSidebarCollapsed} />}
+            {(currentUser.role === UserRole.ORDER_CENTER || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/center" icon={<Settings size={20} />} label="Centro de Pedidos" isCollapsed={isSidebarCollapsed} badge={pendingOrdersBadge} />}
             {(currentUser.role === UserRole.FACTORY || currentUser.role === UserRole.DISPATCH || currentUser.role === UserRole.ADMIN) && (
-              <SidebarLink to="/logistics" icon={<Box size={20} />} label="Logística (Prod/Despacho)" isCollapsed={isSidebarCollapsed} />
+              <SidebarLink to="/logistics" icon={<Box size={20} />} label="Producción y Despacho" isCollapsed={isSidebarCollapsed} badge={validatedOrdersBadge} />
             )}
-            {(currentUser.role === UserRole.COLLECTION || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/collection" icon={<BadgeDollarSign size={20} />} label="Caja y Cobranza" isCollapsed={isSidebarCollapsed} />}
-            {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER) && <SidebarLink to="/reports" icon={<BarChart3 size={20} />} label="Informes y Dashboards" isCollapsed={isSidebarCollapsed} />}
-            {currentUser.role === UserRole.ADMIN && <SidebarLink to="/users" icon={<UserCircle size={20} />} label="Gestión de Usuarios" isCollapsed={isSidebarCollapsed} />}
-            {currentUser.role === UserRole.ADMIN && <SidebarLink to="/audit" icon={<Github size={20} />} label="Sincronización Cloud" isCollapsed={isSidebarCollapsed} />}
+            {(currentUser.role === UserRole.COLLECTION || currentUser.role === UserRole.ADMIN) && <SidebarLink to="/collection" icon={<BadgeDollarSign size={20} />} label="Caja y Cobranzas" isCollapsed={isSidebarCollapsed} />}
+            {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER) && <SidebarLink to="/reports" icon={<BarChart3 size={20} />} label="Reportes y Métricas" isCollapsed={isSidebarCollapsed} />}
+            {currentUser.role === UserRole.ADMIN && <SidebarLink to="/users" icon={<UserCircle size={20} />} label="Usuarios y Accesos" isCollapsed={isSidebarCollapsed} />}
+            {currentUser.role === UserRole.ADMIN && <SidebarLink to="/audit" icon={<Database size={20} />} label="Base de Datos Cloud" isCollapsed={isSidebarCollapsed} />}
           </div>
 
-          <div className={`m-4 p-5 bg-slate-800/40 rounded-[2rem] border border-white/5 transition-all ${isSidebarCollapsed ? 'p-2 m-2 rounded-2xl' : ''}`}>
+          <div className={`m-4 p-5 bg-slate-800/50 rounded-[2rem] border border-white/5 transition-all ${isSidebarCollapsed ? 'p-2 m-2 rounded-2xl' : ''}`}>
             <div className={`flex items-center space-x-3 mb-4 ${isSidebarCollapsed ? 'space-x-0 justify-center' : ''}`}>
-              <div className="w-10 h-10 rounded-2xl bg-slate-700 flex items-center justify-center text-blue-400 border border-white/5 shrink-0">
-                <UserCircle size={24} />
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center text-blue-400 border border-white/10 shrink-0 font-black text-sm uppercase">
+                {currentUser.name.substring(0, 2)}
               </div>
               {!isSidebarCollapsed && (
                 <div className="overflow-hidden animate-in fade-in">
-                  <p className="text-xs font-bold text-white truncate">{currentUser.name}</p>
-                  <div className="flex items-center gap-1.5">
-                     <div className={`w-1.5 h-1.5 rounded-full ${isSynced ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></div>
-                     <p className="text-[9px] font-bold text-slate-500 uppercase">{isSynced ? 'Conectado' : 'Sin Datos'}</p>
+                  <p className="text-xs font-black text-white truncate">{currentUser.name}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                     <div className={`w-1.5 h-1.5 rounded-full ${isSynced ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></div>
+                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                       {isRealtimeLive ? 'Tiempo Real Activo' : isSynced ? 'Sincronizado' : 'Conectando...'}
+                     </p>
                   </div>
                 </div>
               )}
@@ -549,15 +653,42 @@ const App: React.FC = () => {
             <button 
               onClick={() => setCurrentUser(null)} 
               className={`w-full flex items-center justify-center py-3 px-4 rounded-2xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all text-[10px] font-black uppercase tracking-widest ${isSidebarCollapsed ? 'px-2' : 'space-x-2'}`}
-              title={isSidebarCollapsed ? "Salir" : ""}
+              title={isSidebarCollapsed ? "Cerrar Sesión" : ""}
             >
-              <LogOut size={16} /> {!isSidebarCollapsed && <span>Salir</span>}
+              <LogOut size={16} /> {!isSidebarCollapsed && <span>Cerrar Sesión</span>}
             </button>
           </div>
         </nav>
 
         <main className="flex-1 overflow-auto bg-[#f8fafc]">
-          <div className={`p-6 md:p-10 ${isSidebarCollapsed ? 'max-w-full' : 'max-w-7xl'} mx-auto transition-all duration-300`}>
+          {/* Barra de Estado Operativa Desktop */}
+          <div className="hidden md:flex items-center justify-between px-10 py-3.5 bg-white/80 backdrop-blur-md border-b border-slate-200/70 sticky top-0 z-30">
+            <div className="flex items-center gap-3">
+              <span className="px-3 py-1 rounded-full bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest">
+                {currentUser.role}
+              </span>
+              <span className="text-xs font-bold text-slate-500">
+                {new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest ${isRealtimeLive ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-100 border-slate-200 text-slate-600'}`}>
+                <Radio size={13} className={isRealtimeLive ? 'text-emerald-500 animate-pulse' : 'text-slate-400'} />
+                {isRealtimeLive ? 'En Vivo' : 'Cloud Sync'}
+              </div>
+              <button
+                onClick={fetchData}
+                disabled={loading}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-600 text-[10px] font-black uppercase tracking-widest transition-all"
+                title="Sincronizar datos ahora"
+              >
+                <RefreshCw size={13} className={loading ? 'animate-spin text-blue-600' : ''} />
+                Actualizar
+              </button>
+            </div>
+          </div>
+
+          <div className={`p-5 md:p-10 ${isSidebarCollapsed ? 'max-w-full' : 'max-w-7xl'} mx-auto transition-all duration-300`}>
             {!dbReady && dbReady !== 'ERROR' && (
               <div className="mb-8 p-6 bg-amber-50 border border-amber-200 rounded-[2rem] flex flex-col md:flex-row items-center justify-between gap-6 animate-in slide-in-from-top-4">
                 <div className="flex items-center gap-4 text-amber-700">
@@ -581,7 +712,7 @@ const App: React.FC = () => {
             )}
 
             <ErrorBoundary>
-              <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="animate-spin text-blue-600" size={48} /></div>}>
+              <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="animate-spin text-blue-600" size={48} /></div>}>
                 <Routes>
                   <Route path="/" element={
                     currentUser.role === UserRole.ADMIN 
@@ -639,17 +770,24 @@ const App: React.FC = () => {
   );
 };
 
-const SidebarLink: React.FC<{to: string, icon: React.ReactNode, label: string, isCollapsed: boolean}> = ({ to, icon, label, isCollapsed }) => {
+const SidebarLink: React.FC<{to: string, icon: React.ReactNode, label: string, isCollapsed: boolean, badge?: number}> = ({ to, icon, label, isCollapsed, badge }) => {
   const location = useLocation();
   const isActive = location.pathname === to;
   return (
     <Link 
       to={to} 
-      className={`flex items-center px-4 py-3 rounded-2xl transition-all group ${isActive ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-white/5'} ${isCollapsed ? 'justify-center px-2' : 'space-x-3'}`}
+      className={`relative flex items-center justify-between px-4 py-3 rounded-2xl transition-all group ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25' : 'text-slate-400 hover:text-white hover:bg-white/5'} ${isCollapsed ? 'justify-center px-2' : ''}`}
       title={isCollapsed ? label : ""}
     >
-      <span className={`${isActive ? 'text-white' : 'text-slate-500 group-hover:text-blue-500'} shrink-0`}>{icon}</span>
-      {!isCollapsed && <span className="text-xs font-black uppercase tracking-tight truncate animate-in fade-in duration-300">{label}</span>}
+      <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'space-x-3'} min-w-0`}>
+        <span className={`${isActive ? 'text-white' : 'text-slate-500 group-hover:text-blue-400'} shrink-0`}>{icon}</span>
+        {!isCollapsed && <span className="text-xs font-black uppercase tracking-tight truncate animate-in fade-in duration-300">{label}</span>}
+      </div>
+      {badge !== undefined && badge > 0 && (
+        <span className={`${isCollapsed ? 'absolute -top-1 -right-1 w-4 h-4 text-[9px]' : 'px-2 py-0.5 text-[10px]'} rounded-full font-black flex items-center justify-center ${isActive ? 'bg-white text-blue-600' : 'bg-blue-500/20 text-blue-400'}`}>
+          {badge}
+        </span>
+      )}
     </Link>
   );
 };
@@ -766,7 +904,7 @@ const OrdersTable: React.FC<{orders: Order[], role: UserRole}> = ({ orders, role
 };
 
 const Login: React.FC<{
-  onLogin: (user: {name: string, role: UserRole, email: string}) => void,
+  onLogin: (user: CurrentUser) => void,
   setCustomers: React.Dispatch<React.SetStateAction<Customer[]>>
 }> = ({ onLogin, setCustomers }) => {
   const [isRegistering, setIsRegistering] = useState(false);
@@ -786,6 +924,8 @@ const Login: React.FC<{
     setSuccess('');
 
     try {
+      const passwordHash = password ? await hashPassword(password) : '';
+
       // Fetch users from Supabase
       const { data: users, error: fetchError } = await supabase
         .from('users')
@@ -798,36 +938,37 @@ const Login: React.FC<{
         let localUsers: AppUser[] = storedUsersStr ? JSON.parse(storedUsersStr) : [];
         
         if (isRegistering) {
-          if (localUsers.find(u => u.email === email)) {
+          if (localUsers.find(u => u.email.toLowerCase() === email.trim().toLowerCase())) {
             setError('El correo ya está registrado.');
             return;
           }
           
           const newUser: AppUser = {
             id: Math.random().toString(36).substr(2, 9),
-            email,
+            email: email.trim().toLowerCase(),
             name: username || 'Usuario',
-            role,
+            role: localUsers.length === 0 ? UserRole.ADMIN : role,
             isApproved: localUsers.length === 0, // First user is admin and approved
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            passwordHash
           };
-          
-          if (localUsers.length === 0) newUser.role = UserRole.ADMIN;
 
           localUsers.push(newUser);
           localStorage.setItem('erp_users', JSON.stringify(localUsers));
           
           if (newUser.isApproved) {
-            onLogin({ name: newUser.name, role: newUser.role, email: newUser.email });
+            onLogin({ id: newUser.id, name: newUser.name, role: newUser.role, email: newUser.email });
           } else {
             setSuccess('Cuenta creada localmente. Espere aprobación.');
             setIsRegistering(false);
           }
         } else {
-          const user = localUsers.find(u => u.email === email);
+          const user = localUsers.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
           if (!user) { setError('Usuario no encontrado.'); return; }
+          const isValid = await verifyPassword(password, user.passwordHash);
+          if (!isValid) { setError('Contraseña incorrecta.'); return; }
           if (!user.isApproved) { setError('Cuenta no aprobada.'); return; }
-          onLogin({ name: user.name, role: user.role, email: user.email });
+          onLogin({ id: user.id, name: user.name, role: user.role, email: user.email, customerId: user.customerId });
         }
         return;
       }
@@ -839,42 +980,61 @@ const Login: React.FC<{
           return;
         }
         
-        const newUser = {
+        const assignedRole = users?.length === 0 ? UserRole.ADMIN : role;
+        const isFirstUser = users?.length === 0;
+
+        const baseUserPayload: Record<string, any> = {
           email: normalizedEmail,
-          name: username || 'Usuario',
-          phone: phone,
-          address: address,
-          cuit: cuit,
-          role,
-          is_approved: users?.length === 0,
+          name: (username || 'Usuario').trim(),
+          role: assignedRole,
+          is_approved: isFirstUser,
           created_at: new Date().toISOString()
         };
-        
-        if (users?.length === 0) newUser.role = UserRole.ADMIN;
 
-        const { data: insertedUser, error: insertError } = await supabase
+        const extendedUserPayload: Record<string, any> = {
+          ...baseUserPayload,
+          phone: phone.trim() || null,
+          address: address.trim() || null,
+          cuit: cuit.trim() || null,
+          password_hash: passwordHash
+        };
+
+        let { data: insertedUser, error: insertError } = await supabase
           .from('users')
-          .insert([newUser])
+          .insert([extendedUserPayload])
           .select()
           .single();
 
-        if (insertError) throw insertError;
+        if (insertError) {
+          // Fallback si la tabla users aún no tiene las columnas extendidas
+          const fallbackInsert = await supabase
+            .from('users')
+            .insert([baseUserPayload])
+            .select()
+            .single();
+          insertedUser = fallbackInsert.data;
+          insertError = fallbackInsert.error;
+        }
+
+        if (insertError || !insertedUser) throw insertError;
         
+        let linkedCustomerId: string | undefined = insertedUser.customer_id;
+
         // If approved and distributor, ensure customer exists
         if (insertedUser.is_approved && insertedUser.role === UserRole.DISTRIBUTOR) {
           const { data: existingCust } = await supabase
             .from('customers')
             .select('id')
             .eq('name', insertedUser.name)
-            .single();
+            .maybeSingle();
 
           if (!existingCust) {
-            const newCustomer = {
+            const newCustomer: Customer = {
               id: `c_${Date.now()}`,
               name: insertedUser.name,
-              phone: insertedUser.phone,
-              address: insertedUser.address,
-              cuit: insertedUser.cuit,
+              phone: insertedUser.phone || phone.trim(),
+              address: insertedUser.address || address.trim(),
+              cuit: insertedUser.cuit || cuit.trim(),
               priceListId: 'l1',
               balance: 0,
               isBlocked: false,
@@ -890,12 +1050,22 @@ const Login: React.FC<{
               balance: newCustomer.balance,
               is_blocked: newCustomer.isBlocked
             });
+            linkedCustomerId = newCustomer.id;
+            await supabase.from('users').update({ customer_id: newCustomer.id }).eq('id', insertedUser.id);
             setCustomers(prev => [...prev, newCustomer]);
+          } else {
+            linkedCustomerId = existingCust.id;
           }
         }
         
         if (insertedUser.is_approved) {
-          onLogin({ name: insertedUser.name, role: insertedUser.role, email: insertedUser.email });
+          onLogin({
+            id: insertedUser.id,
+            name: insertedUser.name,
+            role: insertedUser.role,
+            email: insertedUser.email,
+            customerId: linkedCustomerId
+          });
         } else {
           setSuccess('Cuenta creada. Espere a que un administrador apruebe su acceso.');
           setIsRegistering(false);
@@ -909,16 +1079,38 @@ const Login: React.FC<{
           setError('Usuario no encontrado. Verifique su correo.');
           return;
         }
+
+        const isPasswordValid = await verifyPassword(password, user.password_hash);
+        if (!isPasswordValid) {
+          setError('Contraseña incorrecta. Verifique sus credenciales.');
+          return;
+        }
+
         if (!user.is_approved) {
           setError('Su cuenta aún no ha sido aprobada por un administrador.');
           return;
+        }
+
+        // Si el usuario heredado aún no tenía password_hash guardado, lo guardamos automáticamente
+        if (!user.password_hash && passwordHash) {
+          supabase
+            .from('users')
+            .update({ password_hash: passwordHash })
+            .eq('id', user.id)
+            .then(() => {});
         }
 
         // Normalizar rol si viene de SQL manual como 'ADMIN'
         let userRole = user.role;
         if (userRole === 'ADMIN') userRole = UserRole.ADMIN;
         
-        onLogin({ name: user.name, role: userRole, email: user.email });
+        onLogin({
+          id: user.id,
+          name: user.name,
+          role: userRole,
+          email: user.email,
+          customerId: user.customer_id
+        });
       }
     } catch (err) {
       console.error("Auth error:", err);

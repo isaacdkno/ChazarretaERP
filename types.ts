@@ -20,6 +20,16 @@ export interface AppUser {
   address?: string;
   phone?: string;
   cuit?: string;
+  customerId?: string;
+  passwordHash?: string;
+}
+
+export interface CurrentUser {
+  id?: string;
+  name: string;
+  role: UserRole;
+  email?: string;
+  customerId?: string;
 }
 
 export enum OrderStatus {
